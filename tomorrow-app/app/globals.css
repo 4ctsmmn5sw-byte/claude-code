@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN",
+    "Noto Sans JP", Meiryo, sans-serif;
+}
+
+body {
+  background: #fafafa;
+  color: #171717;
+  font-family: var(--font-sans);
+}
