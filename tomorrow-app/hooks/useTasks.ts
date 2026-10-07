@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { carryOverTask } from "@/lib/carryover";
+import { carryOverTask, returnTaskToToday } from "@/lib/carryover";
 import { addDays, toDateKey } from "@/lib/date";
 import { sortByRecommendation } from "@/lib/sort";
 import { loadTasks, saveTasks } from "@/lib/storage";
@@ -70,14 +70,23 @@ export function useTasks() {
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...input } : t)));
   }, []);
 
+  /**
+   * 完了・未完了を切り替える。slot を渡すと完了時の予定時間として記録する
+   * （今日のスケジュールで完了済みの枠を固定するため）。未完了に戻すと記録は消える。
+   */
   const toggleTask = useCallback(
-    (id: string) => {
+    (id: string, slot?: { start: number; end: number }) => {
       setTasks((prev) =>
         prev.map((t) => {
           if (t.id !== id) return t;
+          if (t.completed) {
+            const next = { ...t, completed: false };
+            delete next.scheduledSlot;
+            return next;
+          }
           // 過ぎた日のタスクを完了したら今日の完了として扱う（そのままだと今日の画面から消えてしまう）
-          const targetDate = !t.completed && todayKey && t.targetDate < todayKey ? todayKey : t.targetDate;
-          return { ...t, completed: !t.completed, targetDate };
+          const targetDate = todayKey && t.targetDate < todayKey ? todayKey : t.targetDate;
+          return { ...t, completed: true, targetDate, ...(slot ? { scheduledSlot: slot } : {}) };
         }),
       );
     },
@@ -100,6 +109,15 @@ export function useTasks() {
     [tomorrowKey],
   );
 
+  /** 持ち越したタスクを今日に戻す（完了状態は変えない） */
+  const returnToToday = useCallback(
+    (id: string) => {
+      if (!todayKey) return;
+      setTasks((prev) => prev.map((t) => (t.id === id ? returnTaskToToday(t, todayKey) : t)));
+    },
+    [todayKey],
+  );
+
   return {
     loaded,
     today,
@@ -113,5 +131,6 @@ export function useTasks() {
     toggleTask,
     deleteTask,
     carryOver,
+    returnToToday,
   };
 }

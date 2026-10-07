@@ -13,6 +13,8 @@ export interface Task {
   createdAt: number;
   /** 前日以前から持ち越された場合、最初に予定していた日 "YYYY-MM-DD" */
   carriedOverFrom?: string;
+  /** 今日のタスクを完了したときの予定時間（0:00 からの分数）。今日のスケジュールで固定表示する */
+  scheduledSlot?: { start: number; end: number };
 }
 
 export type TaskInput = Pick<Task, "title" | "priority" | "deadline" | "estimatedMinutes">;

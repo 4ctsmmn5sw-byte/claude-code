@@ -7,6 +7,12 @@ const MIGRATIONS_KEY = "tomorrow-migrations:v1";
 const MIGRATION_MANUAL_CARRY_OVER = "manual-carry-over";
 const PRIORITIES: Priority[] = ["high", "medium", "low"];
 
+function isSlot(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const s = value as Record<string, unknown>;
+  return typeof s.start === "number" && typeof s.end === "number";
+}
+
 function isTask(value: unknown): value is Task {
   if (typeof value !== "object" || value === null) return false;
   const t = value as Record<string, unknown>;
@@ -19,7 +25,8 @@ function isTask(value: unknown): value is Task {
     typeof t.completed === "boolean" &&
     typeof t.targetDate === "string" &&
     typeof t.createdAt === "number" &&
-    (t.carriedOverFrom === undefined || typeof t.carriedOverFrom === "string")
+    (t.carriedOverFrom === undefined || typeof t.carriedOverFrom === "string") &&
+    (t.scheduledSlot === undefined || isSlot(t.scheduledSlot))
   );
 }
 

@@ -16,6 +16,8 @@ interface Props {
   onDelete: (id: string) => void;
   /** 渡すと未完了時に「明日に持ち越す」ボタンを表示 */
   onCarryOver?: (id: string) => void;
+  /** 渡すと「持ち越し」タスクに「今日に戻す」ボタンを表示 */
+  onReturnToToday?: (id: string) => void;
 }
 
 const PRIORITY_STYLE: Record<Priority, string> = {
@@ -24,7 +26,7 @@ const PRIORITY_STYLE: Record<Priority, string> = {
   low: "border-neutral-200 text-neutral-400",
 };
 
-export function TaskItem({ task, lead, overdueFrom, onToggle, onUpdate, onDelete, onCarryOver }: Props) {
+export function TaskItem({ task, lead, overdueFrom, onToggle, onUpdate, onDelete, onCarryOver, onReturnToToday }: Props) {
   const [editing, setEditing] = useState(false);
 
   if (editing) {
@@ -88,6 +90,15 @@ export function TaskItem({ task, lead, overdueFrom, onToggle, onUpdate, onDelete
             className="mt-2 -ml-1.5 rounded-md px-1.5 py-1 text-xs text-neutral-500 transition hover:bg-neutral-100 hover:text-neutral-900"
           >
             明日に持ち越す →
+          </button>
+        )}
+        {onReturnToToday && task.carriedOverFrom && (
+          <button
+            type="button"
+            onClick={() => onReturnToToday(task.id)}
+            className="mt-2 -ml-1.5 rounded-md px-1.5 py-1 text-xs text-neutral-500 transition hover:bg-neutral-100 hover:text-neutral-900"
+          >
+            ← 今日に戻す
           </button>
         )}
       </div>

@@ -3,15 +3,9 @@
 import { useState } from "react";
 import type { Schedule } from "@/lib/schedule";
 import type { DaySettings, Task, TaskInput } from "@/lib/types";
+import { ModeToggle, type Mode } from "./ModeToggle";
 import { ScheduleView } from "./ScheduleView";
 import { TaskList } from "./TaskList";
-
-type Mode = "list" | "schedule";
-
-const MODES: { value: Mode; label: string }[] = [
-  { value: "list", label: "一覧" },
-  { value: "schedule", label: "スケジュール" },
-];
 
 interface Props {
   tasks: Task[];
@@ -21,9 +15,10 @@ interface Props {
   onToggle: (id: string) => void;
   onUpdate: (id: string, input: TaskInput) => void;
   onDelete: (id: string) => void;
+  onReturnToToday: (id: string) => void;
 }
 
-export function TomorrowView({ tasks, schedule, settings, onChangeSettings, onToggle, onUpdate, onDelete }: Props) {
+export function TomorrowView({ tasks, schedule, settings, onChangeSettings, onToggle, onUpdate, onDelete, onReturnToToday }: Props) {
   const [mode, setMode] = useState<Mode>("list");
 
   // 最初に取り組むタスク: スケジュールの先頭の未完了タスク（組めない場合はおすすめ順の先頭）
@@ -41,28 +36,13 @@ export function TomorrowView({ tasks, schedule, settings, onChangeSettings, onTo
         ) : (
           <span />
         )}
-        <div className="inline-flex shrink-0 rounded-md border border-neutral-200 bg-white p-0.5" role="tablist" aria-label="表示切り替え">
-          {MODES.map((m) => (
-            <button
-              key={m.value}
-              type="button"
-              role="tab"
-              aria-selected={mode === m.value}
-              onClick={() => setMode(m.value)}
-              className={`rounded px-3 py-1 text-xs transition ${
-                mode === m.value ? "bg-neutral-900 text-white" : "text-neutral-500 hover:bg-neutral-100"
-              }`}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
+        <ModeToggle value={mode} onChange={setMode} />
       </div>
 
       {mode === "list" ? (
         <>
           <p className="mb-2 text-right text-xs text-neutral-400">おすすめ順</p>
-          <TaskList tasks={tasks} onToggle={onToggle} onUpdate={onUpdate} onDelete={onDelete} />
+          <TaskList tasks={tasks} onToggle={onToggle} onUpdate={onUpdate} onDelete={onDelete} onReturnToToday={onReturnToToday} />
         </>
       ) : (
         <ScheduleView

@@ -6,9 +6,10 @@ interface Props {
   onToggle: (id: string) => void;
   onUpdate: (id: string, input: TaskInput) => void;
   onDelete: (id: string) => void;
+  onReturnToToday?: (id: string) => void;
 }
 
-export function TaskList({ tasks, onToggle, onUpdate, onDelete }: Props) {
+export function TaskList({ tasks, onToggle, onUpdate, onDelete, onReturnToToday }: Props) {
   if (tasks.length === 0) {
     return (
       <p className="rounded-xl border border-dashed border-neutral-200 px-4 py-10 text-center text-sm text-neutral-400">
@@ -30,6 +31,7 @@ export function TaskList({ tasks, onToggle, onUpdate, onDelete }: Props) {
           onToggle={onToggle}
           onUpdate={onUpdate}
           onDelete={onDelete}
+          onReturnToToday={onReturnToToday}
         />
       ))}
     </ul>

@@ -10,12 +10,14 @@ interface Props {
   settings: DaySettings;
   hasTasks: boolean;
   onChangeSettings: (settings: DaySettings) => void;
+  /** 今日のスケジュールで渡す現在時刻（0:00 からの分数）。過去の枠を薄く表示する */
+  nowMinutes?: number;
 }
 
 const timeInputClass =
   "rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-sm tabular-nums text-neutral-900 outline-none transition focus:border-neutral-400 focus:ring-2 focus:ring-neutral-100";
 
-export function ScheduleView({ schedule, settings, hasTasks, onChangeSettings }: Props) {
+export function ScheduleView({ schedule, settings, hasTasks, onChangeSettings, nowMinutes }: Props) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-neutral-200 bg-white px-4 py-3">
@@ -54,10 +56,15 @@ export function ScheduleView({ schedule, settings, hasTasks, onChangeSettings }:
         <>
           {schedule.slots.length > 0 && (
             <ol className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
-              {schedule.slots.map(({ task, start, end, late }) => (
+              {schedule.slots.map(({ task, start, end, late }) => {
+                const past = nowMinutes !== undefined && end <= nowMinutes;
+                return (
                 <li
                   key={task.id}
-                  className="flex gap-3 border-b border-neutral-100 px-4 py-3 last:border-b-0 sm:gap-4"
+                  data-past={past || undefined}
+                  className={`flex gap-3 border-b border-neutral-100 px-4 py-3 last:border-b-0 sm:gap-4 ${
+                    past ? "bg-neutral-50 opacity-50" : ""
+                  }`}
                 >
                   <span
                     className={`w-[6.5rem] shrink-0 pt-px text-sm tabular-nums ${
@@ -82,7 +89,8 @@ export function ScheduleView({ schedule, settings, hasTasks, onChangeSettings }:
                     </div>
                   </div>
                 </li>
-              ))}
+                );
+              })}
             </ol>
           )}
 
@@ -105,6 +113,7 @@ export function ScheduleView({ schedule, settings, hasTasks, onChangeSettings }:
 
           <p className="text-xs text-neutral-400">
             締切・重要度・所要時間から自動で割り当てています（タスク間に10分の休憩）。
+            {nowMinutes !== undefined && "完了済みは完了時の予定時間のまま、未完了は現在時刻以降に組み直しています。"}
           </p>
         </>
       )}

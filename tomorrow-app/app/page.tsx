@@ -8,9 +8,10 @@ import { TaskForm } from "@/components/TaskForm";
 import { TodayView } from "@/components/TodayView";
 import { TomorrowView } from "@/components/TomorrowView";
 import { useDaySettings } from "@/hooks/useDaySettings";
+import { useNow } from "@/hooks/useNow";
 import { useTasks } from "@/hooks/useTasks";
 import { formatDateKeyShort } from "@/lib/date";
-import { buildSchedule } from "@/lib/schedule";
+import { buildSchedule, buildTodaySchedule } from "@/lib/schedule";
 
 /** この時刻以降に開いたら「明日」の画面から表示する */
 const EVENING_HOUR = 18;
@@ -29,6 +30,7 @@ export default function Home() {
     toggleTask,
     deleteTask,
     carryOver,
+    returnToToday,
   } = useTasks();
   const { settings, setSettings } = useDaySettings();
   const [selectedDay, setSelectedDay] = useState<Day | null>(null);
@@ -38,10 +40,20 @@ export default function Home() {
   const tasks = day === "today" ? todayTasks : tomorrowTasks;
   const dayKey = day === "today" ? todayKey : tomorrowKey;
 
-  const todaySchedule = useMemo(() => buildSchedule(todayTasks, settings), [todayTasks, settings]);
+  const now = useNow();
+  const nowMinutes = now ? now.getHours() * 60 + now.getMinutes() : 0;
+  const todaySchedule = useMemo(
+    () => buildTodaySchedule(todayTasks, settings, nowMinutes),
+    [todayTasks, settings, nowMinutes],
+  );
   const tomorrowSchedule = useMemo(() => buildSchedule(tomorrowTasks, settings), [tomorrowTasks, settings]);
 
-  const handlers = { onToggle: toggleTask, onUpdate: updateTask, onDelete: deleteTask };
+  const handlers = { onUpdate: updateTask, onDelete: deleteTask };
+  // 今日のタスクを完了するときは、その時点の予定時間を記録して枠を固定する
+  const toggleTodayTask = (id: string) => {
+    const slot = todaySchedule.ok ? todaySchedule.slots.find((s) => s.task.id === id) : undefined;
+    toggleTask(id, slot && { start: slot.start, end: slot.end });
+  };
 
   return (
     <main className="mx-auto w-full max-w-2xl px-4 pb-20 sm:px-6">
@@ -80,13 +92,17 @@ export default function Home() {
 
       <section className="mt-10">
         <h2 className="mb-3 text-sm font-medium text-neutral-900">{day === "today" ? "今日" : "明日"}のタスク</h2>
-        {!loaded || !todayKey ? (
+        {!loaded || !todayKey || !now ? (
           <div className="h-24 animate-pulse rounded-xl bg-neutral-100" />
         ) : day === "today" ? (
           <TodayView
             tasks={todayTasks}
             schedule={todaySchedule}
             todayKey={todayKey}
+            nowMinutes={nowMinutes}
+            settings={settings}
+            onChangeSettings={setSettings}
+            onToggle={toggleTodayTask}
             onCarryOver={carryOver}
             {...handlers}
           />
@@ -96,6 +112,8 @@ export default function Home() {
             schedule={tomorrowSchedule}
             settings={settings}
             onChangeSettings={setSettings}
+            onToggle={toggleTask}
+            onReturnToToday={returnToToday}
             {...handlers}
           />
         )}
