@@ -18,6 +18,15 @@ npm run build
 npm run lint
 ```
 
+### スマホなど別の端末から開く場合
+`npm run dev` は既定で `localhost` 以外からの開発用通信（HMR）を拒否します。拒否されると React が起動せず、ボタンが反応しない状態になります。
+`next.config.ts` で、このマシン自身の IP アドレスは自動的に許可しています（例: `http://192.168.1.10:3000`）。
+それ以外のホスト名やトンネル経由で開く場合は、次のように許可してください。
+
+```bash
+ALLOWED_DEV_ORIGINS=my-host.local,*.example.dev npm run dev
+```
+
 ## 構成
 ```
 app/page.tsx          画面全体

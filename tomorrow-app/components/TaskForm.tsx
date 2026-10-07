@@ -51,6 +51,10 @@ export function TaskForm({ initial = EMPTY, submitLabel, disabled, onSubmit, onC
         placeholder="明日やること"
         aria-label="タスク名"
         maxLength={100}
+        spellCheck={false}
+        autoCorrect="off"
+        autoCapitalize="off"
+        autoComplete="off"
         className={`${inputClass} py-2.5 text-[15px]`}
         autoFocus={Boolean(onCancel)}
       />
