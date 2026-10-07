@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { carryOverTask, returnTaskToToday } from "@/lib/carryover";
 import { addDays, toDateKey } from "@/lib/date";
 import { sortByRecommendation } from "@/lib/sort";
-import { loadPlanDay, loadTasks, savePlanDay, saveTasks } from "@/lib/storage";
-import { fillTodaySlots, isTodayTask, replanToday } from "@/lib/todayPlan";
+import { loadTasks, saveTasks } from "@/lib/storage";
+import { fillTodaySlots, isTodayTask, replanToday, syncTomorrowSlots } from "@/lib/todayPlan";
 import type { DaySettings, Task, TaskInput } from "@/lib/types";
 
 function createId(): string {
@@ -50,15 +50,17 @@ export function useTasks(settings: DaySettings | null) {
   const todayKey = today ? toDateKey(today) : null;
   const tomorrowKey = tomorrow ? toDateKey(tomorrow) : null;
 
-  // 今日のタスクのうち予定時間がないものに空き時間を割り当てる。
+  // 予定時間の保存:
+  // - 明日のタスク: 明日のスケジュールの結果を scheduledSlot に保存（日付が変わるとそのまま今日の予定になる）
+  // - 今日のタスク: 前夜の予定はそのまま。予定のないものだけ現在時刻以降の空き時間に割り当てる
   // 現在時刻は依存に含めないので、時間が経っても予定は動かない。
   useEffect(() => {
-    if (!loaded || !settings || !todayKey) return;
-    const resetOverdue = loadPlanDay() !== todayKey;
-    if (resetOverdue) savePlanDay(todayKey);
+    if (!loaded || !settings || !todayKey || !tomorrowKey) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTasks((prev) => fillTodaySlots(prev, todayKey, settings, currentMinutes(), { resetOverdue }));
-  }, [loaded, settings, todayKey, tasks]);
+    setTasks((prev) =>
+      syncTomorrowSlots(fillTodaySlots(prev, todayKey, settings, currentMinutes()), tomorrowKey, settings),
+    );
+  }, [loaded, settings, todayKey, tomorrowKey, tasks]);
 
   // 今日: 今日の予定 + 過ぎた日の未完了（持ち越すか完了するまで残す）
   const todayTasks = useMemo(

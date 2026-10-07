@@ -11,7 +11,7 @@ import { useDaySettings } from "@/hooks/useDaySettings";
 import { useNow } from "@/hooks/useNow";
 import { useTasks } from "@/hooks/useTasks";
 import { formatDateKeyShort } from "@/lib/date";
-import { buildSchedule } from "@/lib/schedule";
+import { buildSchedule, type Schedule } from "@/lib/schedule";
 import { todayScheduleFromSlots } from "@/lib/todayPlan";
 
 /** この時刻以降に開いたら「明日」の画面から表示する */
@@ -45,7 +45,10 @@ export default function Home() {
   const now = useNow();
   const nowMinutes = now ? now.getHours() * 60 + now.getMinutes() : 0;
   // 今日のスケジュールは保存済みの予定時間から作る（現在時刻では動かない）
-  const todaySchedule = useMemo(() => todayScheduleFromSlots(todayTasks, settings), [todayTasks, settings]);
+  const todaySchedule = useMemo<Schedule>(
+    () => (todayKey ? todayScheduleFromSlots(todayTasks, todayKey, settings) : { ok: false, error: "" }),
+    [todayTasks, todayKey, settings],
+  );
   const tomorrowSchedule = useMemo(() => buildSchedule(tomorrowTasks, settings), [tomorrowTasks, settings]);
 
   const handlers = { onToggle: toggleTask, onUpdate: updateTask, onDelete: deleteTask };

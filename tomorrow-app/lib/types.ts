@@ -13,8 +13,12 @@ export interface Task {
   createdAt: number;
   /** 前日以前から持ち越された場合、最初に予定していた日 "YYYY-MM-DD" */
   carriedOverFrom?: string;
-  /** 今日の予定時間（0:00 からの分数）。時間の経過では動かず、「今から組み直す」などで更新する */
-  scheduledSlot?: { start: number; end: number };
+  /**
+   * 予定時間（0:00 からの分数）。date はその予定の日 "YYYY-MM-DD"。
+   * 明日のタスクには明日のスケジュールの結果が保存され、日付が変わるとそのまま今日の予定になる。
+   * 時間の経過では動かず、「今から組み直す」などで更新する。date のない旧データは targetDate の日の予定とみなす。
+   */
+  scheduledSlot?: { start: number; end: number; date?: string };
   /** 実際に完了ボタンを押した日時（ISO 8601）。未完了に戻すと消える */
   completedAt?: string;
 }

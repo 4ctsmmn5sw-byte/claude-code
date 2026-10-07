@@ -83,7 +83,7 @@ export function TodayView({
           hasTasks={tasks.length > 0}
           onChangeSettings={onChangeSettings}
           nowMinutes={nowMinutes}
-          renderStatus={(slot) => <StatusBadge status={slotStatus(slot.task, nowMinutes)} />}
+          renderStatus={(slot) => <StatusBadge status={slotStatus(slot.task, todayKey, nowMinutes)} />}
           onReplan={onReplan}
           note="予定時間は自動では動きません。遅れが出たら「今から組み直す」で、未完了のタスクを現在時刻以降に並べ直せます（完了済みはそのまま）。"
         />
@@ -101,7 +101,7 @@ export function TodayView({
                 key={task.id}
                 task={task}
                 lead={timeById.get(task.id) ?? null}
-                status={<StatusBadge status={slotStatus(task, nowMinutes)} />}
+                status={<StatusBadge status={slotStatus(task, todayKey, nowMinutes)} />}
                 overdueFrom={task.targetDate < todayKey ? task.targetDate : undefined}
                 onToggle={onToggle}
                 onUpdate={onUpdate}
