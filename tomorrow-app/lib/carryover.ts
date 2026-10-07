@@ -1,0 +1,29 @@
+import type { Task } from "./types";
+
+/** タスクを明日に持ち越す。最初に予定していた日を carriedOverFrom に残す */
+export function carryOverTask(task: Task, tomorrowKey: string): Task {
+  const next = { ...task, targetDate: tomorrowKey, carriedOverFrom: task.carriedOverFrom ?? task.targetDate };
+  // 今日の予定時間は持ち越さない（明日のスケジュールは毎回計算する）
+  delete next.scheduledSlot;
+  return next;
+}
+
+/** 持ち越したタスクを今日に戻す。完了状態などほかの項目は変えない */
+export function returnTaskToToday(task: Task, todayKey: string): Task {
+  const next = { ...task, targetDate: todayKey };
+  delete next.carriedOverFrom;
+  delete next.scheduledSlot; // 今日の空き時間に割り当て直す
+  return next;
+}
+
+/**
+ * 旧バージョンは日付が変わると未完了タスクを自動で明日へ移していた（手動の持ち越しは無かった）。
+ * そのため carriedOverFrom を持つタスクはすべて自動で移されたもの。元の日付に戻す。
+ */
+export function revertLegacyAutoCarryOver(tasks: Task[]): Task[] {
+  return tasks.map((t) => {
+    if (!t.carriedOverFrom) return t;
+    const { carriedOverFrom, ...rest } = t;
+    return { ...rest, targetDate: carriedOverFrom };
+  });
+}
