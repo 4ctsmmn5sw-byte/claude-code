@@ -41,7 +41,7 @@ export function TaskForm({ initial = EMPTY, submitLabel, placeholder = "明日�
 
   const labelClass = "mb-1 block text-xs text-neutral-500";
   const inputClass =
-    "w-full rounded-md border border-neutral-200 bg-white px-2.5 py-2 text-sm text-neutral-900 outline-none transition focus:border-neutral-400 focus:ring-2 focus:ring-neutral-100";
+    "block w-full min-w-0 max-w-full rounded-md border border-neutral-200 bg-white px-2.5 py-2 text-sm text-neutral-900 outline-none transition focus:border-neutral-400 focus:ring-2 focus:ring-neutral-100";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3" noValidate>
@@ -60,8 +60,9 @@ export function TaskForm({ initial = EMPTY, submitLabel, placeholder = "明日�
         autoFocus={Boolean(onCancel)}
       />
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[auto_1fr_1fr]">
-        <div>
+      {/* スマホは縦並び、640px 以上は「重要度・締切・所要時間」の横並び。minmax(0, …) で列がはみ出さないようにする */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="min-w-0">
           <span className={labelClass}>重要度</span>
           <div className="inline-flex w-full rounded-md border border-neutral-200 p-0.5 sm:w-auto" role="radiogroup" aria-label="重要度">
             {PRIORITIES.map((p) => (
@@ -81,12 +82,12 @@ export function TaskForm({ initial = EMPTY, submitLabel, placeholder = "明日�
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 sm:contents">
-          <label>
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:contents">
+          <label className="block min-w-0">
             <span className={labelClass}>締切時間</span>
             <input type="time" value={deadline} onChange={(e) => setDeadline(e.target.value)} className={inputClass} />
           </label>
-          <label>
+          <label className="block min-w-0">
             <span className={labelClass}>所要時間（分）</span>
             <input
               type="number"

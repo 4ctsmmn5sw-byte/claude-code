@@ -65,7 +65,7 @@ export function TaskItem({ task, lead, status, overdueFrom, onToggle, onUpdate, 
         <div className="flex items-start gap-2">
           {lead && <span className="mt-px shrink-0 text-xs tabular-nums text-neutral-400">{lead}</span>}
           <p
-            className={`break-words text-[15px] leading-snug ${
+            className={`min-w-0 [overflow-wrap:anywhere] text-[15px] leading-snug ${
               task.completed ? "text-neutral-400 line-through" : "text-neutral-900"
             }`}
           >

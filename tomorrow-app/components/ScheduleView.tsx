@@ -22,14 +22,15 @@ interface Props {
 }
 
 const timeInputClass =
-  "rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-sm tabular-nums text-neutral-900 outline-none transition focus:border-neutral-400 focus:ring-2 focus:ring-neutral-100";
+  "w-full min-w-0 rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-sm tabular-nums text-neutral-900 outline-none transition focus:border-neutral-400 focus:ring-2 focus:ring-neutral-100";
 
 export function ScheduleView({ schedule, settings, hasTasks, onChangeSettings, nowMinutes, renderStatus, onReplan, note }: Props) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-neutral-200 bg-white px-4 py-3">
         <span className="text-xs text-neutral-500">活動時間</span>
-        <div className="flex items-center gap-2">
+        {/* スマホでは開始・終了が行いっぱいに等分、広い画面では内容幅 */}
+        <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:w-auto sm:grid-cols-[minmax(0,8rem)_auto_minmax(0,8rem)]">
           <input
             type="time"
             aria-label="開始時刻"
@@ -94,7 +95,7 @@ export function ScheduleView({ schedule, settings, hasTasks, onChangeSettings, n
                   </span>
                   <div className="min-w-0 flex-1">
                     <p
-                      className={`break-words text-[15px] leading-snug ${
+                      className={`min-w-0 [overflow-wrap:anywhere] text-[15px] leading-snug ${
                         task.completed ? "text-neutral-400 line-through" : "text-neutral-900"
                       }`}
                     >
@@ -122,7 +123,7 @@ export function ScheduleView({ schedule, settings, hasTasks, onChangeSettings, n
               <ul className="mt-2 space-y-1 text-sm text-neutral-500">
                 {schedule.overflow.map((t) => (
                   <li key={t.id} className="flex justify-between gap-3">
-                    <span className="min-w-0 break-words">{t.title}</span>
+                    <span className="min-w-0 [overflow-wrap:anywhere]">{t.title}</span>
                     <span className="shrink-0 text-xs tabular-nums">{formatDuration(t.estimatedMinutes)}</span>
                   </li>
                 ))}
