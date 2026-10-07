@@ -6,6 +6,7 @@ import { PRIORITY_LABEL, type Priority, type TaskInput } from "@/lib/types";
 interface Props {
   initial?: TaskInput;
   submitLabel: string;
+  placeholder?: string;
   disabled?: boolean;
   onSubmit: (input: TaskInput) => void;
   onCancel?: () => void;
@@ -15,7 +16,7 @@ const EMPTY: TaskInput = { title: "", priority: "medium", deadline: "", estimate
 const PRIORITIES: Priority[] = ["high", "medium", "low"];
 const MAX_MINUTES = 24 * 60;
 
-export function TaskForm({ initial = EMPTY, submitLabel, disabled, onSubmit, onCancel }: Props) {
+export function TaskForm({ initial = EMPTY, submitLabel, placeholder = "明日やること", disabled, onSubmit, onCancel }: Props) {
   const [title, setTitle] = useState(initial.title);
   const [priority, setPriority] = useState<Priority>(initial.priority);
   const [deadline, setDeadline] = useState(initial.deadline);
@@ -48,7 +49,7 @@ export function TaskForm({ initial = EMPTY, submitLabel, disabled, onSubmit, onC
         type="text"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        placeholder="明日やること"
+        placeholder={placeholder}
         aria-label="タスク名"
         maxLength={100}
         spellCheck={false}

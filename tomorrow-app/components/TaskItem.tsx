@@ -7,10 +7,15 @@ import { TaskForm } from "./TaskForm";
 
 interface Props {
   task: Task;
-  rank: number | null;
+  /** タイトルの前に出す小さな表示（おすすめ順の番号や予定時間） */
+  lead?: string | null;
+  /** 過ぎた日のタスクなら、その予定日 "YYYY-MM-DD" */
+  overdueFrom?: string;
   onToggle: (id: string) => void;
   onUpdate: (id: string, input: TaskInput) => void;
   onDelete: (id: string) => void;
+  /** 渡すと未完了時に「明日に持ち越す」ボタンを表示 */
+  onCarryOver?: (id: string) => void;
 }
 
 const PRIORITY_STYLE: Record<Priority, string> = {
@@ -19,7 +24,7 @@ const PRIORITY_STYLE: Record<Priority, string> = {
   low: "border-neutral-200 text-neutral-400",
 };
 
-export function TaskItem({ task, rank, onToggle, onUpdate, onDelete }: Props) {
+export function TaskItem({ task, lead, overdueFrom, onToggle, onUpdate, onDelete, onCarryOver }: Props) {
   const [editing, setEditing] = useState(false);
 
   if (editing) {
@@ -54,9 +59,7 @@ export function TaskItem({ task, rank, onToggle, onUpdate, onDelete }: Props) {
 
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
-          {rank !== null && (
-            <span className="mt-px shrink-0 text-xs tabular-nums text-neutral-400">{rank}.</span>
-          )}
+          {lead && <span className="mt-px shrink-0 text-xs tabular-nums text-neutral-400">{lead}</span>}
           <p
             className={`break-words text-[15px] leading-snug ${
               task.completed ? "text-neutral-400 line-through" : "text-neutral-900"
@@ -66,6 +69,11 @@ export function TaskItem({ task, rank, onToggle, onUpdate, onDelete }: Props) {
           </p>
         </div>
         <div className={`mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs ${task.completed ? "opacity-50" : ""}`}>
+          {overdueFrom && (
+            <span className="rounded bg-neutral-100 px-1.5 py-px text-neutral-600">
+              {formatDateKeyShort(overdueFrom)}の予定
+            </span>
+          )}
           {task.carriedOverFrom && <CarriedOverBadge from={task.carriedOverFrom} />}
           <span className={`rounded border px-1.5 py-px ${PRIORITY_STYLE[task.priority]}`}>
             重要度 {PRIORITY_LABEL[task.priority]}
@@ -73,6 +81,15 @@ export function TaskItem({ task, rank, onToggle, onUpdate, onDelete }: Props) {
           <span className="text-neutral-500">{task.deadline ? `${task.deadline} まで` : "締切なし"}</span>
           <span className="text-neutral-500">{formatDuration(task.estimatedMinutes)}</span>
         </div>
+        {onCarryOver && !task.completed && (
+          <button
+            type="button"
+            onClick={() => onCarryOver(task.id)}
+            className="mt-2 -ml-1.5 rounded-md px-1.5 py-1 text-xs text-neutral-500 transition hover:bg-neutral-100 hover:text-neutral-900"
+          >
+            明日に持ち越す →
+          </button>
+        )}
       </div>
 
       <div className="flex shrink-0 gap-1">

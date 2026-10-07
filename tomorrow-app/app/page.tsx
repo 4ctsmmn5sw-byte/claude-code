@@ -1,84 +1,102 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { DayTabs, type Day } from "@/components/DayTabs";
 import { Header } from "@/components/Header";
-import { ScheduleView } from "@/components/ScheduleView";
 import { SummaryCard } from "@/components/SummaryCard";
 import { TaskForm } from "@/components/TaskForm";
-import { TaskList } from "@/components/TaskList";
+import { TodayView } from "@/components/TodayView";
+import { TomorrowView } from "@/components/TomorrowView";
 import { useDaySettings } from "@/hooks/useDaySettings";
 import { useTasks } from "@/hooks/useTasks";
+import { formatDateKeyShort } from "@/lib/date";
 import { buildSchedule } from "@/lib/schedule";
 
-type View = "list" | "schedule";
-
-const VIEWS: { value: View; label: string }[] = [
-  { value: "list", label: "一覧" },
-  { value: "schedule", label: "スケジュール" },
-];
+/** この時刻以降に開いたら「明日」の画面から表示する */
+const EVENING_HOUR = 18;
 
 export default function Home() {
-  const { loaded, today, tomorrow, tasks, completedCount, addTask, updateTask, toggleTask, deleteTask } = useTasks();
+  const {
+    loaded,
+    today,
+    tomorrow,
+    todayKey,
+    tomorrowKey,
+    todayTasks,
+    tomorrowTasks,
+    addTask,
+    updateTask,
+    toggleTask,
+    deleteTask,
+    carryOver,
+  } = useTasks();
   const { settings, setSettings } = useDaySettings();
-  const [view, setView] = useState<View>("list");
+  const [selectedDay, setSelectedDay] = useState<Day | null>(null);
 
-  const schedule = useMemo(() => buildSchedule(tasks, settings), [tasks, settings]);
-  // 最初に取り組むタスク: スケジュールの先頭の未完了タスク（組めない場合はおすすめ順の先頭）
-  const firstTask =
-    (schedule.ok ? schedule.slots.find((s) => !s.task.completed)?.task : undefined) ??
-    tasks.find((t) => !t.completed);
+  // 未選択なら時間帯で決める（日中は今日、夜は明日の計画）
+  const day: Day = selectedDay ?? (today && today.getHours() >= EVENING_HOUR ? "tomorrow" : "today");
+  const tasks = day === "today" ? todayTasks : tomorrowTasks;
+  const dayKey = day === "today" ? todayKey : tomorrowKey;
+
+  const todaySchedule = useMemo(() => buildSchedule(todayTasks, settings), [todayTasks, settings]);
+  const tomorrowSchedule = useMemo(() => buildSchedule(tomorrowTasks, settings), [tomorrowTasks, settings]);
+
+  const handlers = { onToggle: toggleTask, onUpdate: updateTask, onDelete: deleteTask };
 
   return (
     <main className="mx-auto w-full max-w-2xl px-4 pb-20 sm:px-6">
       <Header />
 
-      <SummaryCard today={today} tomorrow={tomorrow} completed={completedCount} total={tasks.length} />
+      <DayTabs
+        value={day}
+        onChange={setSelectedDay}
+        labels={{
+          today: todayKey ? formatDateKeyShort(todayKey) : "",
+          tomorrow: tomorrowKey ? formatDateKeyShort(tomorrowKey) : "",
+        }}
+      />
+
+      <SummaryCard
+        day={day}
+        today={today}
+        tomorrow={tomorrow}
+        completed={tasks.filter((t) => t.completed).length}
+        total={tasks.length}
+      />
 
       <section className="mt-8">
-        <h2 className="mb-3 text-sm font-medium text-neutral-900">タスクを追加</h2>
+        <h2 className="mb-3 text-sm font-medium text-neutral-900">
+          {day === "today" ? "今日" : "明日"}のタスクを追加
+        </h2>
         <div className="rounded-xl border border-neutral-200 bg-white p-4">
-          <TaskForm submitLabel="追加" disabled={!loaded} onSubmit={addTask} />
+          <TaskForm
+            submitLabel="追加"
+            placeholder={day === "today" ? "今日やること" : "明日やること"}
+            disabled={!loaded || !dayKey}
+            onSubmit={(input) => dayKey && addTask(input, dayKey)}
+          />
         </div>
       </section>
 
       <section className="mt-10">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-sm font-medium text-neutral-900">明日のタスク</h2>
-          <div className="inline-flex rounded-md border border-neutral-200 bg-white p-0.5" role="tablist" aria-label="表示切り替え">
-            {VIEWS.map((v) => (
-              <button
-                key={v.value}
-                type="button"
-                role="tab"
-                aria-selected={view === v.value}
-                onClick={() => setView(v.value)}
-                className={`rounded px-3 py-1 text-xs transition ${
-                  view === v.value ? "bg-neutral-900 text-white" : "text-neutral-500 hover:bg-neutral-100"
-                }`}
-              >
-                {v.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        {firstTask && (
-          <p className="mb-3 text-xs text-neutral-500">
-            まずは <span className="font-medium text-neutral-900">「{firstTask.title}」</span> から始めましょう
-          </p>
-        )}
-        {!loaded ? (
+        <h2 className="mb-3 text-sm font-medium text-neutral-900">{day === "today" ? "今日" : "明日"}のタスク</h2>
+        {!loaded || !todayKey ? (
           <div className="h-24 animate-pulse rounded-xl bg-neutral-100" />
-        ) : view === "list" ? (
-          <>
-            <p className="mb-2 text-right text-xs text-neutral-400">おすすめ順</p>
-            <TaskList tasks={tasks} onToggle={toggleTask} onUpdate={updateTask} onDelete={deleteTask} />
-          </>
+        ) : day === "today" ? (
+          <TodayView
+            tasks={todayTasks}
+            schedule={todaySchedule}
+            todayKey={todayKey}
+            onCarryOver={carryOver}
+            {...handlers}
+          />
         ) : (
-          <ScheduleView
-            schedule={schedule}
+          <TomorrowView
+            tasks={tomorrowTasks}
+            schedule={tomorrowSchedule}
             settings={settings}
-            hasTasks={tasks.length > 0}
             onChangeSettings={setSettings}
+            {...handlers}
           />
         )}
       </section>

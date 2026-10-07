@@ -1,16 +1,18 @@
 import type { Task } from "./types";
 
+/** タスクを明日に持ち越す。最初に予定していた日を carriedOverFrom に残す */
+export function carryOverTask(task: Task, tomorrowKey: string): Task {
+  return { ...task, targetDate: tomorrowKey, carriedOverFrom: task.carriedOverFrom ?? task.targetDate };
+}
+
 /**
- * 明日より前の日付のまま未完了のタスクを明日に持ち越す。
- * 完了済みは持ち越さない。変更がなければ同じ配列を返す。
+ * 旧バージョンは日付が変わると未完了タスクを自動で明日へ移していた（手動の持ち越しは無かった）。
+ * そのため carriedOverFrom を持つタスクはすべて自動で移されたもの。元の日付に戻す。
  */
-export function carryOverTasks(tasks: Task[], tomorrowKey: string): Task[] {
-  let changed = false;
-  const next = tasks.map((t) => {
-    // "YYYY-MM-DD" は文字列比較で日付の前後が判定できる
-    if (t.completed || t.targetDate >= tomorrowKey) return t;
-    changed = true;
-    return { ...t, targetDate: tomorrowKey, carriedOverFrom: t.carriedOverFrom ?? t.targetDate };
+export function revertLegacyAutoCarryOver(tasks: Task[]): Task[] {
+  return tasks.map((t) => {
+    if (!t.carriedOverFrom) return t;
+    const { carriedOverFrom, ...rest } = t;
+    return { ...rest, targetDate: carriedOverFrom };
   });
-  return changed ? next : tasks;
 }

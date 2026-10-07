@@ -1,13 +1,16 @@
 import { formatJaDate } from "@/lib/date";
 
 interface Props {
+  /** 表示中の日。進捗はこの日のタスクの値 */
+  day: "today" | "tomorrow";
   today: Date | null;
   tomorrow: Date | null;
   completed: number;
   total: number;
 }
 
-export function SummaryCard({ today, tomorrow, completed, total }: Props) {
+export function SummaryCard({ day, today, tomorrow, completed, total }: Props) {
+  const dateClass = (active: boolean) => `mt-1 font-medium ${active ? "text-neutral-900" : "text-neutral-400"}`;
   const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
 
   return (
@@ -15,14 +18,14 @@ export function SummaryCard({ today, tomorrow, completed, total }: Props) {
       <dl className="grid grid-cols-3 gap-3 text-sm">
         <div>
           <dt className="text-xs text-neutral-400">今日</dt>
-          <dd className="mt-1 font-medium text-neutral-600">{today ? formatJaDate(today) : "—"}</dd>
+          <dd className={dateClass(day === "today")}>{today ? formatJaDate(today) : "—"}</dd>
         </div>
         <div>
           <dt className="text-xs text-neutral-400">明日</dt>
-          <dd className="mt-1 font-medium text-neutral-900">{tomorrow ? formatJaDate(tomorrow) : "—"}</dd>
+          <dd className={dateClass(day === "tomorrow")}>{tomorrow ? formatJaDate(tomorrow) : "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-neutral-400">進捗</dt>
+          <dt className="text-xs text-neutral-400">進捗（{day === "today" ? "今日" : "明日"}）</dt>
           <dd className="mt-1 font-medium tabular-nums text-neutral-900">
             {completed} / {total} 完了
           </dd>

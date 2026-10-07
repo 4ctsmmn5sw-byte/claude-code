@@ -26,7 +26,7 @@ export function TaskList({ tasks, onToggle, onUpdate, onDelete }: Props) {
         <TaskItem
           key={task.id}
           task={task}
-          rank={task.completed ? null : ++rank}
+          lead={task.completed ? null : `${++rank}.`}
           onToggle={onToggle}
           onUpdate={onUpdate}
           onDelete={onDelete}

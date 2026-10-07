@@ -8,10 +8,14 @@
 - チェックボックスで完了と未完了を切り替え（完了済みは末尾へ）
 - タスクの編集と削除
 - 進捗表示（`3 / 5 完了` と進捗率）
-- 未完了タスクの自動持ち越し（前日以前の未完了タスクを明日の一覧に「持ち越し」ラベル付きで表示。完了済みは持ち越さない）
-- 明日のスケジュール表示（締切・重要度・所要時間から、ルールベースで実行時間を自動割り当て）
+- 「今日」「明日」の2画面（18時より前は今日、18時以降は明日を最初に表示）
+  - 今日: 予定時間順の一覧。完了チェック・編集・削除・「明日に持ち越す」（1件ずつ／未完了を一括）
+  - 過ぎた日の未完了タスクは自動で移動せず、「10/6の予定」のように今日の画面に残る
+  - 持ち越したタスクは翌日のタスクになり「持ち越し」ラベルが付く（完了済みは持ち越せない）
+- 明日のスケジュール表示（締切・重要度・所要時間から、ルールベースで実行時間を自動割り当て。今日の予定時間も同じルール）
 - 活動可能時間の設定（開始・終了時刻）
-- localStorage に保存（タスクは `tomorrow-tasks:v1`、活動時間は `tomorrow-settings:v1`）
+- localStorage に保存（タスクは `tomorrow-tasks:v1`、活動時間は `tomorrow-settings:v1`、データ移行の実行記録は `tomorrow-migrations:v1`）
+  - 旧バージョンが自動で明日へ移したタスクは、初回読み込み時に一度だけ元の日付へ戻す
 
 ## スケジュールの割り当てルール（`lib/schedule.ts`）
 1. 開始時刻から順に、タスク間に10分の休憩を挟んで並べる
@@ -42,7 +46,7 @@ ALLOWED_DEV_ORIGINS=my-host.local,*.example.dev npm run dev
 ## 構成
 ```
 app/page.tsx          画面全体
-components/           Header / SummaryCard / TaskForm / TaskList / TaskItem / ScheduleView
+components/           Header / DayTabs / SummaryCard / TaskForm / TodayView / TomorrowView / TaskList / TaskItem / ScheduleView
 hooks/useTasks.ts     タスクの状態管理と localStorage への同期
 hooks/useDaySettings.ts  活動可能時間の状態管理
 lib/                  型・日付処理・おすすめ順・持ち越し・スケジュール計算・保存処理

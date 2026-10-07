@@ -1,7 +1,10 @@
+import { revertLegacyAutoCarryOver } from "./carryover";
 import { DEFAULT_DAY_SETTINGS, type DaySettings, type Priority, type Task } from "./types";
 
 const STORAGE_KEY = "tomorrow-tasks:v1";
 const SETTINGS_KEY = "tomorrow-settings:v1";
+const MIGRATIONS_KEY = "tomorrow-migrations:v1";
+const MIGRATION_MANUAL_CARRY_OVER = "manual-carry-over";
 const PRIORITIES: Priority[] = ["high", "medium", "low"];
 
 function isTask(value: unknown): value is Task {
@@ -25,10 +28,33 @@ export function loadTasks(): Task[] {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter(isTask) : [];
+    const tasks = Array.isArray(parsed) ? parsed.filter(isTask) : [];
+    return applyMigrations(tasks);
   } catch {
     return [];
   }
+}
+
+/** 保存データの一度きりの移行。実行済みの移行は MIGRATIONS_KEY に記録する */
+function applyMigrations(tasks: Task[]): Task[] {
+  let done: string[] = [];
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(MIGRATIONS_KEY) ?? "[]");
+    if (Array.isArray(parsed)) done = parsed.filter((v): v is string => typeof v === "string");
+  } catch {
+    // 壊れた記録は未実行として扱う
+  }
+  if (done.includes(MIGRATION_MANUAL_CARRY_OVER)) return tasks;
+
+  // 先に記録する。記録できないまま移行すると、次回また移行が走り手動の持ち越しまで戻してしまう
+  try {
+    window.localStorage.setItem(MIGRATIONS_KEY, JSON.stringify([...done, MIGRATION_MANUAL_CARRY_OVER]));
+  } catch {
+    return tasks;
+  }
+  const migrated = revertLegacyAutoCarryOver(tasks);
+  saveTasks(migrated);
+  return migrated;
 }
 
 export function saveTasks(tasks: Task[]): void {
