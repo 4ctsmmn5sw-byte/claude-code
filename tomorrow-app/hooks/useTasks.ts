@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { carryOverTasks } from "@/lib/carryover";
 import { addDays, toDateKey } from "@/lib/date";
 import { sortByRecommendation } from "@/lib/sort";
 import { loadTasks, saveTasks } from "@/lib/storage";
@@ -18,17 +19,21 @@ export function useTasks() {
 
   // localStorage と現在日時はブラウザでしか分からないので、マウント後に読み込む
   useEffect(() => {
+    const now = new Date();
     /* eslint-disable react-hooks/set-state-in-effect */
-    setTasks(loadTasks());
-    setToday(new Date());
+    setTasks(carryOverTasks(loadTasks(), toDateKey(addDays(now, 1))));
+    setToday(now);
     setLoaded(true);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
-  // 日付をまたいで開きっぱなしでも「明日」がずれないよう、タブ復帰時に更新する
+  // 日付をまたいで開きっぱなしでも「明日」がずれないよう、タブ復帰時に更新して持ち越しも行う
   useEffect(() => {
     const refresh = () => {
-      if (document.visibilityState === "visible") setToday(new Date());
+      if (document.visibilityState !== "visible") return;
+      const now = new Date();
+      setToday(now);
+      setTasks((prev) => carryOverTasks(prev, toDateKey(addDays(now, 1))));
     };
     document.addEventListener("visibilitychange", refresh);
     return () => document.removeEventListener("visibilitychange", refresh);

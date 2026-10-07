@@ -8,7 +8,19 @@
 - チェックボックスで完了と未完了を切り替え（完了済みは末尾へ）
 - タスクの編集と削除
 - 進捗表示（`3 / 5 完了` と進捗率）
-- localStorage に保存（キーは `tomorrow-tasks:v1`）
+- 未完了タスクの自動持ち越し（前日以前の未完了タスクを明日の一覧に「持ち越し」ラベル付きで表示。完了済みは持ち越さない）
+- 明日のスケジュール表示（締切・重要度・所要時間から、ルールベースで実行時間を自動割り当て）
+- 活動可能時間の設定（開始・終了時刻）
+- localStorage に保存（タスクは `tomorrow-tasks:v1`、活動時間は `tomorrow-settings:v1`）
+
+## スケジュールの割り当てルール（`lib/schedule.ts`）
+1. 開始時刻から順に、タスク間に10分の休憩を挟んで並べる
+2. 次に置くタスクは、おすすめ度（締切・重要度・所要時間）の高い順に選ぶ
+3. ただし、それを先に置くと締切のある他のタスクが間に合わなくなる場合は飛ばす
+4. どの順でも締切に間に合わない場合は、締切の早いものを優先し「締切に間に合いません」と表示する
+5. 終了時刻までに収まらないタスクは「入りきらないタスク」として表示する
+
+完了済みのタスクも枠を確保したまま扱うので、途中で完了にしても予定はずれません。
 
 ## 開発
 ```bash
@@ -30,9 +42,10 @@ ALLOWED_DEV_ORIGINS=my-host.local,*.example.dev npm run dev
 ## 構成
 ```
 app/page.tsx          画面全体
-components/           Header / SummaryCard / TaskForm / TaskList / TaskItem
+components/           Header / SummaryCard / TaskForm / TaskList / TaskItem / ScheduleView
 hooks/useTasks.ts     タスクの状態管理と localStorage への同期
-lib/                  型・日付処理・おすすめ順の計算・保存処理
+hooks/useDaySettings.ts  活動可能時間の状態管理
+lib/                  型・日付処理・おすすめ順・持ち越し・スケジュール計算・保存処理
 ```
 
 おすすめ順のスコア計算は `lib/sort.ts` を参照してください。

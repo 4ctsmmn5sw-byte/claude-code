@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { formatDuration } from "@/lib/date";
+import { formatDateKeyShort, formatDuration } from "@/lib/date";
 import { PRIORITY_LABEL, type Priority, type Task, type TaskInput } from "@/lib/types";
 import { TaskForm } from "./TaskForm";
 
@@ -66,6 +66,7 @@ export function TaskItem({ task, rank, onToggle, onUpdate, onDelete }: Props) {
           </p>
         </div>
         <div className={`mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs ${task.completed ? "opacity-50" : ""}`}>
+          {task.carriedOverFrom && <CarriedOverBadge from={task.carriedOverFrom} />}
           <span className={`rounded border px-1.5 py-px ${PRIORITY_STYLE[task.priority]}`}>
             重要度 {PRIORITY_LABEL[task.priority]}
           </span>
@@ -91,5 +92,16 @@ export function TaskItem({ task, rank, onToggle, onUpdate, onDelete }: Props) {
         </button>
       </div>
     </li>
+  );
+}
+
+export function CarriedOverBadge({ from }: { from: string }) {
+  return (
+    <span
+      className="rounded bg-neutral-100 px-1.5 py-px text-neutral-600"
+      title={`${formatDateKeyShort(from)} から持ち越し`}
+    >
+      持ち越し
+    </span>
   );
 }

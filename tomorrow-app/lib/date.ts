@@ -28,6 +28,17 @@ export function timeToMinutes(time: string): number | null {
   return h * 60 + min;
 }
 
+/** 0:00 からの分数を "HH:mm" に変換 */
+export function minutesToTime(minutes: number): string {
+  return `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
+}
+
+/** "YYYY-MM-DD" を "M/D" に変換 */
+export function formatDateKeyShort(key: string): string {
+  const [, m, d] = key.split("-");
+  return `${Number(m)}/${Number(d)}`;
+}
+
 export function formatDuration(minutes: number): string {
   if (minutes < 60) return `${minutes}分`;
   const h = Math.floor(minutes / 60);

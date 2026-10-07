@@ -11,9 +11,19 @@ export interface Task {
   /** "YYYY-MM-DD"。このタスクを実行する日（＝登録時の明日） */
   targetDate: string;
   createdAt: number;
+  /** 前日以前から持ち越された場合、最初に予定していた日 "YYYY-MM-DD" */
+  carriedOverFrom?: string;
 }
 
 export type TaskInput = Pick<Task, "title" | "priority" | "deadline" | "estimatedMinutes">;
+
+/** 明日の活動可能時間（"HH:mm"） */
+export interface DaySettings {
+  dayStart: string;
+  dayEnd: string;
+}
+
+export const DEFAULT_DAY_SETTINGS: DaySettings = { dayStart: "09:00", dayEnd: "22:00" };
 
 export const PRIORITY_LABEL: Record<Priority, string> = {
   high: "高",
