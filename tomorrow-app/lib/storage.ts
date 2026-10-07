@@ -4,6 +4,8 @@ import { DEFAULT_DAY_SETTINGS, type DaySettings, type Priority, type Task } from
 const STORAGE_KEY = "tomorrow-tasks:v1";
 const SETTINGS_KEY = "tomorrow-settings:v1";
 const MIGRATIONS_KEY = "tomorrow-migrations:v1";
+/** 今日の予定時間を最後に整えた日 "YYYY-MM-DD" */
+const PLAN_DAY_KEY = "tomorrow-plan-day:v1";
 const MIGRATION_MANUAL_CARRY_OVER = "manual-carry-over";
 const PRIORITIES: Priority[] = ["high", "medium", "low"];
 
@@ -26,7 +28,8 @@ function isTask(value: unknown): value is Task {
     typeof t.targetDate === "string" &&
     typeof t.createdAt === "number" &&
     (t.carriedOverFrom === undefined || typeof t.carriedOverFrom === "string") &&
-    (t.scheduledSlot === undefined || isSlot(t.scheduledSlot))
+    (t.scheduledSlot === undefined || isSlot(t.scheduledSlot)) &&
+    (t.completedAt === undefined || typeof t.completedAt === "string")
   );
 }
 
@@ -91,5 +94,22 @@ export function saveDaySettings(settings: DaySettings): void {
     window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   } catch {
     // 保存できなくても画面上の設定は有効なまま
+  }
+}
+
+/** 今日の予定を最後に整えた日。日付が変わったら前日の予定を片付けるのに使う */
+export function loadPlanDay(): string | null {
+  try {
+    return window.localStorage.getItem(PLAN_DAY_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function savePlanDay(dateKey: string): void {
+  try {
+    window.localStorage.setItem(PLAN_DAY_KEY, dateKey);
+  } catch {
+    // 記録できなくても、前日の予定が残るだけで動作は続く
   }
 }

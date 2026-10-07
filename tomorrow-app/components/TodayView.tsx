@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { minutesToTime } from "@/lib/date";
 import type { Schedule } from "@/lib/schedule";
+import { slotStatus } from "@/lib/todayPlan";
 import type { DaySettings, Task, TaskInput } from "@/lib/types";
 import { ModeToggle, type Mode } from "./ModeToggle";
 import { ScheduleView } from "./ScheduleView";
+import { StatusBadge } from "./StatusBadge";
 import { TaskItem } from "./TaskItem";
 
 interface Props {
@@ -19,6 +21,7 @@ interface Props {
   onUpdate: (id: string, input: TaskInput) => void;
   onDelete: (id: string) => void;
   onCarryOver: (ids: string[]) => void;
+  onReplan: () => void;
 }
 
 export function TodayView({
@@ -32,10 +35,11 @@ export function TodayView({
   onUpdate,
   onDelete,
   onCarryOver,
+  onReplan,
 }: Props) {
   const [mode, setMode] = useState<Mode>("list");
 
-  // 予定時間順に並べ、活動時間に入りきらないもの・枠のない完了済みは末尾に
+  // 予定時間順に並べ、予定時間のない未完了・完了済みは末尾に
   const timeById = new Map<string, string>();
   const ordered: Task[] = [];
   if (schedule.ok) {
@@ -43,11 +47,8 @@ export function TodayView({
       timeById.set(s.task.id, `${minutesToTime(s.start)}–${minutesToTime(s.end)}`);
       ordered.push(s.task);
     }
-    for (const t of schedule.overflow) {
-      timeById.set(t.id, "時間外");
-      ordered.push(t);
-    }
   }
+  for (const t of tasks) if (!ordered.includes(t) && !t.completed) ordered.push(t);
   for (const t of tasks) if (!ordered.includes(t)) ordered.push(t);
 
   const incomplete = tasks.filter((t) => !t.completed);
@@ -67,7 +68,7 @@ export function TodayView({
         ) : next ? (
           <p className="text-xs text-neutral-500">
             次は <span className="font-medium text-neutral-900">「{next.title}」</span>
-            {nextTime && nextTime !== "時間外" && `（${nextTime}）`}
+            {nextTime && `（${nextTime}）`}
           </p>
         ) : (
           <p className="text-xs text-neutral-500">今日のタスクはすべて完了しました。おつかれさまでした。</p>
@@ -82,6 +83,9 @@ export function TodayView({
           hasTasks={tasks.length > 0}
           onChangeSettings={onChangeSettings}
           nowMinutes={nowMinutes}
+          renderStatus={(slot) => <StatusBadge status={slotStatus(slot.task, nowMinutes)} />}
+          onReplan={onReplan}
+          note="予定時間は自動では動きません。遅れが出たら「今から組み直す」で、未完了のタスクを現在時刻以降に並べ直せます（完了済みはそのまま）。"
         />
       ) : tasks.length === 0 ? (
         <p className="rounded-xl border border-dashed border-neutral-200 px-4 py-10 text-center text-sm text-neutral-400">
@@ -97,6 +101,7 @@ export function TodayView({
                 key={task.id}
                 task={task}
                 lead={timeById.get(task.id) ?? null}
+                status={<StatusBadge status={slotStatus(task, nowMinutes)} />}
                 overdueFrom={task.targetDate < todayKey ? task.targetDate : undefined}
                 onToggle={onToggle}
                 onUpdate={onUpdate}

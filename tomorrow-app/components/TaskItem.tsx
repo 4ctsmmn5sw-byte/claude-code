@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { formatDateKeyShort, formatDuration } from "@/lib/date";
 import { PRIORITY_LABEL, type Priority, type Task, type TaskInput } from "@/lib/types";
 import { TaskForm } from "./TaskForm";
@@ -9,6 +9,8 @@ interface Props {
   task: Task;
   /** タイトルの前に出す小さな表示（おすすめ順の番号や予定時間） */
   lead?: string | null;
+  /** 状態表示（今日の画面の「完了」「遅れ」「予定」など） */
+  status?: ReactNode;
   /** 過ぎた日のタスクなら、その予定日 "YYYY-MM-DD" */
   overdueFrom?: string;
   onToggle: (id: string) => void;
@@ -26,7 +28,7 @@ const PRIORITY_STYLE: Record<Priority, string> = {
   low: "border-neutral-200 text-neutral-400",
 };
 
-export function TaskItem({ task, lead, overdueFrom, onToggle, onUpdate, onDelete, onCarryOver, onReturnToToday }: Props) {
+export function TaskItem({ task, lead, status, overdueFrom, onToggle, onUpdate, onDelete, onCarryOver, onReturnToToday }: Props) {
   const [editing, setEditing] = useState(false);
 
   if (editing) {
@@ -70,7 +72,8 @@ export function TaskItem({ task, lead, overdueFrom, onToggle, onUpdate, onDelete
             {task.title}
           </p>
         </div>
-        <div className={`mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs ${task.completed ? "opacity-50" : ""}`}>
+        <div className={`mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs ${task.completed && !status ? "opacity-50" : ""}`}>
+          {status}
           {overdueFrom && (
             <span className="rounded bg-neutral-100 px-1.5 py-px text-neutral-600">
               {formatDateKeyShort(overdueFrom)}の予定

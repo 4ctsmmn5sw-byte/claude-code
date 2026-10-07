@@ -19,5 +19,5 @@ export function useDaySettings() {
     if (loaded) saveDaySettings(settings);
   }, [settings, loaded]);
 
-  return { settings, setSettings };
+  return { settings, setSettings, loaded };
 }

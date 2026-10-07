@@ -1,7 +1,8 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { formatDuration, minutesToTime } from "@/lib/date";
-import type { Schedule } from "@/lib/schedule";
+import type { Schedule, ScheduleSlot } from "@/lib/schedule";
 import { PRIORITY_LABEL, type DaySettings } from "@/lib/types";
 import { CarriedOverBadge } from "./TaskItem";
 
@@ -10,14 +11,20 @@ interface Props {
   settings: DaySettings;
   hasTasks: boolean;
   onChangeSettings: (settings: DaySettings) => void;
-  /** 今日のスケジュールで渡す現在時刻（0:00 からの分数）。過去の枠を薄く表示する */
+  /** 今日のスケジュールで渡す現在時刻（0:00 からの分数）。終わった完了済みの枠を薄く表示する */
   nowMinutes?: number;
+  /** 各枠の状態表示（今日のスケジュール用） */
+  renderStatus?: (slot: ScheduleSlot) => ReactNode;
+  /** 渡すと「今から組み直す」ボタンを表示 */
+  onReplan?: () => void;
+  /** 下部の説明文（省略時は明日用の説明） */
+  note?: string;
 }
 
 const timeInputClass =
   "rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-sm tabular-nums text-neutral-900 outline-none transition focus:border-neutral-400 focus:ring-2 focus:ring-neutral-100";
 
-export function ScheduleView({ schedule, settings, hasTasks, onChangeSettings, nowMinutes }: Props) {
+export function ScheduleView({ schedule, settings, hasTasks, onChangeSettings, nowMinutes, renderStatus, onReplan, note }: Props) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-neutral-200 bg-white px-4 py-3">
@@ -46,6 +53,18 @@ export function ScheduleView({ schedule, settings, hasTasks, onChangeSettings, n
         )}
       </div>
 
+      {onReplan && schedule.ok && hasTasks && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={onReplan}
+            className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-700 transition hover:border-neutral-300 hover:text-neutral-900"
+          >
+            ↻ 今から組み直す
+          </button>
+        </div>
+      )}
+
       {!schedule.ok ? (
         <p className="text-xs text-red-600">{schedule.error}</p>
       ) : !hasTasks ? (
@@ -57,7 +76,7 @@ export function ScheduleView({ schedule, settings, hasTasks, onChangeSettings, n
           {schedule.slots.length > 0 && (
             <ol className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
               {schedule.slots.map(({ task, start, end, late }) => {
-                const past = nowMinutes !== undefined && end <= nowMinutes;
+                const past = nowMinutes !== undefined && task.completed && end <= nowMinutes;
                 return (
                 <li
                   key={task.id}
@@ -82,6 +101,7 @@ export function ScheduleView({ schedule, settings, hasTasks, onChangeSettings, n
                       {task.title}
                     </p>
                     <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-neutral-500">
+                      {renderStatus?.({ task, start, end, late })}
                       {task.carriedOverFrom && <CarriedOverBadge from={task.carriedOverFrom} />}
                       <span>重要度 {PRIORITY_LABEL[task.priority]}</span>
                       {task.deadline && <span>締切 {task.deadline}</span>}
@@ -112,8 +132,7 @@ export function ScheduleView({ schedule, settings, hasTasks, onChangeSettings, n
           )}
 
           <p className="text-xs text-neutral-400">
-            締切・重要度・所要時間から自動で割り当てています（タスク間に10分の休憩）。
-            {nowMinutes !== undefined && "完了済みは完了時の予定時間のまま、未完了は現在時刻以降に組み直しています。"}
+            {note ?? "締切・重要度・所要時間から自動で割り当てています（タスク間に10分の休憩）。"}
           </p>
         </>
       )}

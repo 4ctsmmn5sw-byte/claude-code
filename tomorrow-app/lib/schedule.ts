@@ -128,29 +128,3 @@ export function buildSchedule(tasks: Task[], settings: DaySettings, options: Opt
 export function roundUpToFiveMinutes(minutes: number): number {
   return Math.ceil(minutes / 5) * 5;
 }
-
-/**
- * 今日のスケジュール。
- * - 完了済み: 完了時に記録した予定時間（scheduledSlot）で固定。記録がなければ
- *   「全タスクを開始時刻から並べた場合」の時間を使う
- * - 未完了: 現在時刻以降に、完了済みの枠を避けて再配置する
- */
-export function buildTodaySchedule(tasks: Task[], settings: DaySettings, nowMinutes: number): Schedule {
-  const plan = buildSchedule(tasks, settings);
-  if (!plan.ok) return plan;
-
-  const fixed: ScheduleSlot[] = [];
-  for (const task of tasks) {
-    if (!task.completed) continue;
-    const slot = task.scheduledSlot ?? plan.slots.find((s) => s.task.id === task.id);
-    if (!slot) continue; // 枠が決まらない完了済みタスクは表示側で末尾に出す
-    const deadline = deadlineOf(task);
-    fixed.push({ task, start: slot.start, end: slot.end, late: deadline !== null && slot.end > deadline });
-  }
-
-  return buildSchedule(
-    tasks.filter((t) => !t.completed),
-    settings,
-    { from: roundUpToFiveMinutes(nowMinutes), fixed },
-  );
-}

@@ -11,12 +11,14 @@ import { useDaySettings } from "@/hooks/useDaySettings";
 import { useNow } from "@/hooks/useNow";
 import { useTasks } from "@/hooks/useTasks";
 import { formatDateKeyShort } from "@/lib/date";
-import { buildSchedule, buildTodaySchedule } from "@/lib/schedule";
+import { buildSchedule } from "@/lib/schedule";
+import { todayScheduleFromSlots } from "@/lib/todayPlan";
 
 /** この時刻以降に開いたら「明日」の画面から表示する */
 const EVENING_HOUR = 18;
 
 export default function Home() {
+  const { settings, setSettings, loaded: settingsLoaded } = useDaySettings();
   const {
     loaded,
     today,
@@ -31,8 +33,8 @@ export default function Home() {
     deleteTask,
     carryOver,
     returnToToday,
-  } = useTasks();
-  const { settings, setSettings } = useDaySettings();
+    replan,
+  } = useTasks(settingsLoaded ? settings : null);
   const [selectedDay, setSelectedDay] = useState<Day | null>(null);
 
   // 未選択なら時間帯で決める（日中は今日、夜は明日の計画）
@@ -42,18 +44,11 @@ export default function Home() {
 
   const now = useNow();
   const nowMinutes = now ? now.getHours() * 60 + now.getMinutes() : 0;
-  const todaySchedule = useMemo(
-    () => buildTodaySchedule(todayTasks, settings, nowMinutes),
-    [todayTasks, settings, nowMinutes],
-  );
+  // 今日のスケジュールは保存済みの予定時間から作る（現在時刻では動かない）
+  const todaySchedule = useMemo(() => todayScheduleFromSlots(todayTasks, settings), [todayTasks, settings]);
   const tomorrowSchedule = useMemo(() => buildSchedule(tomorrowTasks, settings), [tomorrowTasks, settings]);
 
-  const handlers = { onUpdate: updateTask, onDelete: deleteTask };
-  // 今日のタスクを完了するときは、その時点の予定時間を記録して枠を固定する
-  const toggleTodayTask = (id: string) => {
-    const slot = todaySchedule.ok ? todaySchedule.slots.find((s) => s.task.id === id) : undefined;
-    toggleTask(id, slot && { start: slot.start, end: slot.end });
-  };
+  const handlers = { onToggle: toggleTask, onUpdate: updateTask, onDelete: deleteTask };
 
   return (
     <main className="mx-auto w-full max-w-2xl px-4 pb-20 sm:px-6">
@@ -102,8 +97,8 @@ export default function Home() {
             nowMinutes={nowMinutes}
             settings={settings}
             onChangeSettings={setSettings}
-            onToggle={toggleTodayTask}
             onCarryOver={carryOver}
+            onReplan={replan}
             {...handlers}
           />
         ) : (
@@ -112,7 +107,6 @@ export default function Home() {
             schedule={tomorrowSchedule}
             settings={settings}
             onChangeSettings={setSettings}
-            onToggle={toggleTask}
             onReturnToToday={returnToToday}
             {...handlers}
           />
