@@ -66,12 +66,12 @@ export function TodayView({
         {tasks.length === 0 ? (
           <span />
         ) : next ? (
-          <p className="text-xs text-neutral-500">
+          <p className="min-w-0 [overflow-wrap:anywhere] text-xs text-neutral-500">
             次は <span className="font-medium text-neutral-900">「{next.title}」</span>
             {nextTime && `（${nextTime}）`}
           </p>
         ) : (
-          <p className="text-xs text-neutral-500">今日のタスクはすべて完了しました。おつかれさまでした。</p>
+          <p className="min-w-0 [overflow-wrap:anywhere] text-xs text-neutral-500">今日のタスクはすべて完了しました。おつかれさまでした。</p>
         )}
         <ModeToggle value={mode} onChange={setMode} />
       </div>

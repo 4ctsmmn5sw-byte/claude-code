@@ -5,6 +5,28 @@
     "Noto Sans JP", Meiryo, sans-serif;
 }
 
+@layer base {
+  input,
+  select,
+  textarea {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* iOS Safari の日時入力は独自の見た目と最小幅を持ち、グリッドからはみ出して重なる */
+  @supports (-webkit-touch-callout: none) {
+    input[type="time"] {
+      -webkit-appearance: none;
+      appearance: none;
+      min-height: 2.375rem;
+    }
+  }
+
+  input::-webkit-date-and-time-value {
+    text-align: left;
+  }
+}
+
 body {
   background: #fafafa;
   color: #171717;

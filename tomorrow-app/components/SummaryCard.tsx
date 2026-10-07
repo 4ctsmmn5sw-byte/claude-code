@@ -15,7 +15,7 @@ export function SummaryCard({ day, today, tomorrow, completed, total }: Props) {
 
   return (
     <section className="rounded-xl border border-neutral-200 bg-white p-4 sm:p-5">
-      <dl className="grid grid-cols-3 gap-3 text-sm">
+      <dl className="grid grid-cols-[repeat(3,minmax(0,1fr))] gap-3 text-sm">
         <div>
           <dt className="text-xs text-neutral-400">今日</dt>
           <dd className={dateClass(day === "today")}>{today ? formatJaDate(today) : "—"}</dd>

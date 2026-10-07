@@ -30,7 +30,7 @@ export function TomorrowView({ tasks, schedule, settings, onChangeSettings, onTo
     <div>
       <div className="mb-3 flex items-center justify-between gap-3">
         {firstTask ? (
-          <p className="text-xs text-neutral-500">
+          <p className="min-w-0 [overflow-wrap:anywhere] text-xs text-neutral-500">
             まずは <span className="font-medium text-neutral-900">「{firstTask.title}」</span> から始めましょう
           </p>
         ) : (

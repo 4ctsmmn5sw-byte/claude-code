@@ -11,7 +11,7 @@ const NAMES: Record<Day, string> = { today: "今日", tomorrow: "明日" };
 
 export function DayTabs({ value, onChange, labels }: Props) {
   return (
-    <div className="mb-4 grid grid-cols-2 rounded-lg border border-neutral-200 bg-white p-1" role="tablist" aria-label="表示する日">
+    <div className="mb-4 grid grid-cols-[repeat(2,minmax(0,1fr))] rounded-lg border border-neutral-200 bg-white p-1" role="tablist" aria-label="表示する日">
       {DAYS.map((d) => (
         <button
           key={d}
