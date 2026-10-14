@@ -2,10 +2,26 @@ import { DAY_MINUTES } from "./time";
 import { weekdayOf } from "./date";
 import type { DateKey, FixedEvent, Interval, Task } from "./types";
 
-/** その日に表示する固定予定（規則から展開する。保存はしない） */
+/** 曜日と適用期間から、その日が繰り返しの対象日か（「休み」かどうかは見ない） */
+export function fixedEventAppliesTo(e: FixedEvent, date: DateKey): boolean {
+  if (!e.weekdays.includes(weekdayOf(date))) return false;
+  if (e.validFrom && date < e.validFrom) return false;
+  if (e.validTo && date > e.validTo) return false;
+  return true;
+}
+
+/** その日に有効な固定予定（規則から展開する。保存はしない）。「この日だけ休み」は除く */
 export function fixedEventsForDate(events: FixedEvent[], date: DateKey): FixedEvent[] {
-  const wd = weekdayOf(date);
-  return events.filter((e) => e.weekdays.includes(wd)).sort((a, b) => a.startMin - b.startMin);
+  return events
+    .filter((e) => fixedEventAppliesTo(e, date) && !e.skipDates.includes(date))
+    .sort((a, b) => a.startMin - b.startMin);
+}
+
+/** その日に「休み」にしている固定予定（取り消せるよう薄く表示する） */
+export function skippedFixedEventsForDate(events: FixedEvent[], date: DateKey): FixedEvent[] {
+  return events
+    .filter((e) => fixedEventAppliesTo(e, date) && e.skipDates.includes(date))
+    .sort((a, b) => a.startMin - b.startMin);
 }
 
 /** その日に配置されたタスク */

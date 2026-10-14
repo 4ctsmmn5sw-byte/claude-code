@@ -171,12 +171,23 @@ export const actions = {
     commit({ ...d, tasks: d.tasks.filter((t) => t.id !== id) });
   },
 
-  saveFixedEvent(input: Omit<FixedEvent, "id" | "createdAt" | "updatedAt"> & { id?: string }): ActionResult {
+  saveFixedEvent(
+    input: Omit<FixedEvent, "id" | "createdAt" | "updatedAt" | "skipDates" | "validFrom" | "validTo"> & {
+      id?: string;
+      validFrom?: DateKey | null;
+      validTo?: DateKey | null;
+    },
+  ): ActionResult {
     const title = input.title.trim();
     if (!title) return { ok: false, message: "予定名を入力してください" };
     if (input.weekdays.length === 0) return { ok: false, message: "曜日を1つ以上選んでください" };
     if (input.startMin < 0 || input.endMin > DAY_MINUTES || input.endMin <= input.startMin) {
       return { ok: false, message: "終了時刻は開始時刻より後にしてください（0:00〜24:00）" };
+    }
+    const validFrom = input.validFrom ?? null;
+    const validTo = input.validTo ?? null;
+    if (validFrom && validTo && validFrom > validTo) {
+      return { ok: false, message: "適用終了日は適用開始日以降にしてください" };
     }
     const d = data();
     const now = nowIso();
@@ -189,6 +200,10 @@ export const actions = {
       startMin: input.startMin,
       endMin: input.endMin,
       color: input.color,
+      validFrom,
+      validTo,
+      // 「この日だけ休み」は毎週の設定を編集しても残す
+      skipDates: existing?.skipDates ?? [],
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };
@@ -197,6 +212,30 @@ export const actions = {
       : [...d.fixedEvents, event];
     commit({ ...d, fixedEvents });
     return { ok: true };
+  },
+
+  /** この日だけ休みにする（繰り返し設定そのものは変えない） */
+  skipFixedEventOn(id: string, date: DateKey) {
+    const d = data();
+    commit({
+      ...d,
+      fixedEvents: d.fixedEvents.map((e) =>
+        e.id === id && !e.skipDates.includes(date)
+          ? { ...e, skipDates: [...e.skipDates, date].sort(), updatedAt: nowIso() }
+          : e,
+      ),
+    });
+  },
+
+  /** 「この日だけ休み」を取り消す */
+  unskipFixedEventOn(id: string, date: DateKey) {
+    const d = data();
+    commit({
+      ...d,
+      fixedEvents: d.fixedEvents.map((e) =>
+        e.id === id ? { ...e, skipDates: e.skipDates.filter((x) => x !== date), updatedAt: nowIso() } : e,
+      ),
+    });
   },
 
   deleteFixedEvent(id: string) {

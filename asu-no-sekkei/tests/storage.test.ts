@@ -75,6 +75,40 @@ describe("store actions", () => {
     expect(repo.saved!.tasks[0]).toMatchObject({ date: "2026-10-14", startMin: 720 });
   });
 
+  it("v1 の保存データを v2 に変換して読み込む", () => {
+    const r = parseAppData(
+      JSON.stringify({
+        schemaVersion: 1,
+        tasks: [],
+        fixedEvents: [{ id: "f", title: "大学", weekdays: [1], startMin: 540, endMin: 720, color: "slate" }],
+        settings: { snapMinutes: 5 },
+      }),
+    );
+    expect(r.data.schemaVersion).toBe(2);
+    expect(r.data.fixedEvents[0]).toMatchObject({ validFrom: null, validTo: null, skipDates: [] });
+    expect(r.data.settings.pxPerMinute).toBe(1.5);
+    expect(r.warning).toBeNull();
+  });
+
+  it("「この日だけ休み」は例外日として保存され、毎週の設定は変わらない", () => {
+    actions.saveFixedEvent({ title: "大学", weekdays: [1, 3], startMin: 540, endMin: 720, color: "slate" });
+    const id = repo.saved!.fixedEvents[0].id;
+    actions.skipFixedEventOn(id, "2026-10-14");
+    expect(repo.saved!.fixedEvents[0]).toMatchObject({ weekdays: [1, 3], startMin: 540, endMin: 720, skipDates: ["2026-10-14"] });
+    // 毎週の設定を編集しても休みの日は残る
+    actions.saveFixedEvent({ id, title: "大学", weekdays: [1, 3], startMin: 540, endMin: 780, color: "slate" });
+    expect(repo.saved!.fixedEvents[0].skipDates).toEqual(["2026-10-14"]);
+    actions.unskipFixedEventOn(id, "2026-10-14");
+    expect(repo.saved!.fixedEvents[0].skipDates).toEqual([]);
+  });
+
+  it("適用終了日が開始日より前なら保存しない", () => {
+    const r = actions.saveFixedEvent({
+      title: "x", weekdays: [1], startMin: 0, endMin: 60, color: "slate", validFrom: "2026-11-01", validTo: "2026-10-01",
+    });
+    expect(r.ok).toBe(false);
+  });
+
   it("固定予定は日付ごとにコピーせず 1 件の規則として保存する", () => {
     actions.saveFixedEvent({ title: "大学", weekdays: [1, 3], startMin: 540, endMin: 720, color: "slate" });
     expect(repo.saved!.fixedEvents).toHaveLength(1);

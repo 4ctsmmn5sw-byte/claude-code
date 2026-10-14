@@ -73,7 +73,7 @@ export function TimeInput({
         }}
         onBlur={(e) => commit(e.target.value)}
         aria-invalid={error || invalid}
-        className={`h-10 w-full rounded-lg border bg-white px-3 text-base tabular-nums outline-none transition focus:ring-2 ${
+        className={`h-12 w-full rounded-xl border bg-white px-3 text-base tabular-nums outline-none transition focus:ring-2 ${
           error || invalid
             ? "border-rose-300 focus:ring-rose-200"
             : "border-neutral-200 focus:border-neutral-400 focus:ring-neutral-200"

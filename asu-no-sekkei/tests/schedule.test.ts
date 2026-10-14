@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { checkPlacement, conflictingTaskIds, fixedEventsForDate, overlaps } from "@/lib/schedule";
+import { checkPlacement, conflictingTaskIds, fixedEventsForDate, overlaps, skippedFixedEventsForDate } from "@/lib/schedule";
 import type { FixedEvent, Task } from "@/lib/types";
 
 const now = "2026-10-14T00:00:00.000Z";
 const univ: FixedEvent = {
-  id: "f1", title: "大学", weekdays: [1, 3], startMin: 540, endMin: 720, color: "slate", createdAt: now, updatedAt: now,
+  id: "f1", title: "大学", weekdays: [1, 3], startMin: 540, endMin: 720, color: "slate",
+  validFrom: null, validTo: null, skipDates: [], createdAt: now, updatedAt: now,
 };
 const task = (id: string, date: string | null, startMin: number | null, durationMin = 60): Task => ({
   id, title: id, durationMin, color: "blue", done: false, date, startMin, createdAt: now, updatedAt: now,
@@ -47,5 +48,27 @@ describe("重複判定", () => {
   it("後から固定予定を追加して重なったタスクを検出する", () => {
     const tasks = [task("a", "2026-10-14", 600)];
     expect([...conflictingTaskIds(tasks, [univ], "2026-10-14")]).toEqual(["a"]);
+  });
+});
+
+describe("適用期間と「この日だけ休み」", () => {
+  it("適用開始日・終了日の外には表示しない（両端の日は含む）", () => {
+    const e = { ...univ, validFrom: "2026-10-14", validTo: "2026-10-26" };
+    expect(fixedEventsForDate([e], "2026-10-12")).toEqual([]); // 開始前の月曜
+    expect(fixedEventsForDate([e], "2026-10-14")).toHaveLength(1); // 開始日（水）
+    expect(fixedEventsForDate([e], "2026-10-26")).toHaveLength(1); // 終了日（月）
+    expect(fixedEventsForDate([e], "2026-10-28")).toEqual([]); // 終了後の水曜
+  });
+  it("休みにした日だけ除外し、他の週はそのまま", () => {
+    const e = { ...univ, skipDates: ["2026-10-14"] };
+    expect(fixedEventsForDate([e], "2026-10-14")).toEqual([]);
+    expect(skippedFixedEventsForDate([e], "2026-10-14")).toHaveLength(1);
+    expect(fixedEventsForDate([e], "2026-10-21")).toHaveLength(1);
+    expect(fixedEventsForDate([e], "2026-10-12")).toHaveLength(1);
+  });
+  it("休みの日は固定予定と重ならない扱いになる", () => {
+    const e = { ...univ, skipDates: ["2026-10-14"] };
+    expect(checkPlacement([task("a", null, null)], [e], "2026-10-14", "a", 600, 660).ok).toBe(true);
+    expect(checkPlacement([task("a", null, null)], [e], "2026-10-21", "a", 600, 660).ok).toBe(false);
   });
 });

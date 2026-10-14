@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatMinutes, parseTime, pointerToStartMinutes, PX_PER_MINUTE, snap, yToMinutes } from "@/lib/time";
+import { formatMinutes, parseTime, pointerToStartMinutes, DEFAULT_PX_PER_MINUTE, snap, yToMinutes } from "@/lib/time";
 
 describe("parseTime / formatMinutes", () => {
   it("さまざまな書式を分に変換する", () => {
@@ -35,12 +35,12 @@ describe("座標 → 時刻", () => {
     expect(snap(63.4, 1)).toBe(63);
   });
   it("Y 座標を分に換算する", () => {
-    expect(yToMinutes(600 * PX_PER_MINUTE)).toBe(600);
+    expect(yToMinutes(600 * DEFAULT_PX_PER_MINUTE)).toBe(600);
   });
   it("スクロール量（タイムライン上端の位置）が違っても同じ時刻になる", () => {
     const grab = 10;
     // 9:00 の位置にタスク上端が来るポインタ位置を、2 通りのスクロール状態で計算
-    const target = 540 * PX_PER_MINUTE;
+    const target = 540 * DEFAULT_PX_PER_MINUTE;
     for (const timelineTop of [120, -480, -1100.5]) {
       const pointerY = timelineTop + target + grab;
       expect(pointerToStartMinutes(pointerY, timelineTop, grab, 60, 5)).toBe(540);
@@ -52,7 +52,7 @@ describe("座標 → 時刻", () => {
   });
   it("1 分刻みでは端数をそのまま使う", () => {
     const top = 50;
-    const y = top + 543 * PX_PER_MINUTE;
+    const y = top + 543 * DEFAULT_PX_PER_MINUTE;
     expect(pointerToStartMinutes(y, top, 0, 30, 1)).toBe(543);
     expect(pointerToStartMinutes(y, top, 0, 30, 5)).toBe(545);
   });

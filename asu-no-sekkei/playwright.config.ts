@@ -14,7 +14,8 @@ export default defineConfig({
   },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 860 } }, testIgnore: /mobile/ },
-    { name: "mobile", use: { ...devices["Pixel 7"] }, testMatch: /mobile/ },
+    // iPhone 14 の画面サイズ・タッチ・DPR（ブラウザエンジンは Chromium）
+    { name: "mobile", use: { ...devices["iPhone 14"], browserName: "chromium", defaultBrowserType: "chromium" }, testMatch: /mobile/ },
   ],
   webServer: {
     command: `npx next start -p ${PORT}`,

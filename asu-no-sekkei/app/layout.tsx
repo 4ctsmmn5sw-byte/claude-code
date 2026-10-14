@@ -11,6 +11,8 @@ export const viewport: Viewport = {
   themeColor: "#ffffff",
   width: "device-width",
   initialScale: 1,
+  // iPhone のノッチ・ホームインジケーター領域まで描画し、env(safe-area-inset-*) で余白を取る
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

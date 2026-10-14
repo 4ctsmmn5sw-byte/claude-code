@@ -1,8 +1,14 @@
 /** 1 日の分数 */
 export const DAY_MINUTES = 24 * 60;
 
-/** タイムラインの縦方向の倍率（1 分あたりの px）。24h = 1728px */
-export const PX_PER_MINUTE = 1.2;
+/** タイムラインの表示倍率（1 分あたりの px）の段階。1.5 なら 24h = 2160px */
+export const ZOOM_LEVELS = [0.75, 1, 1.5, 2, 3] as const;
+export const DEFAULT_PX_PER_MINUTE = 1.5;
+
+/** 位置 → 時刻の対応を保ったまま倍率を変えるための、表示中央の時刻を基準にしたスクロール量 */
+export function anchoredScrollTop(anchorMin: number, anchorOffsetPx: number, bodyOffsetTop: number, pxPerMinute: number): number {
+  return Math.max(0, bodyOffsetTop + anchorMin * pxPerMinute - anchorOffsetPx);
+}
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -62,11 +68,11 @@ export function snap(min: number, step: number): number {
  * タイムライン内の Y 座標（px、タイムライン上端が 0）を分に換算する。
  * 呼び出し側は clientY - timelineRect.top を渡すので、スクロール量や画面サイズに依存しない。
  */
-export function yToMinutes(y: number, pxPerMinute = PX_PER_MINUTE): number {
+export function yToMinutes(y: number, pxPerMinute = DEFAULT_PX_PER_MINUTE): number {
   return y / pxPerMinute;
 }
 
-export function minutesToY(min: number, pxPerMinute = PX_PER_MINUTE): number {
+export function minutesToY(min: number, pxPerMinute = DEFAULT_PX_PER_MINUTE): number {
   return min * pxPerMinute;
 }
 
@@ -83,7 +89,7 @@ export function pointerToStartMinutes(
   grabOffsetPx: number,
   duration: number,
   step: number,
-  pxPerMinute = PX_PER_MINUTE,
+  pxPerMinute = DEFAULT_PX_PER_MINUTE,
 ): number {
   const raw = yToMinutes(pointerClientY - timelineTop - grabOffsetPx, pxPerMinute);
   const snapped = snap(raw, step);

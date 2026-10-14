@@ -1,6 +1,6 @@
 import { FIXED_COLORS, TASK_COLORS, DEFAULT_FIXED_COLOR, DEFAULT_TASK_COLOR } from "./colors";
 import { isDateKey } from "./date";
-import { DAY_MINUTES } from "./time";
+import { DAY_MINUTES, DEFAULT_PX_PER_MINUTE, ZOOM_LEVELS } from "./time";
 import type { AppData, FixedEvent, Settings, Task, Weekday } from "./types";
 
 /**
@@ -20,10 +20,10 @@ export interface LoadResult {
 
 export const STORAGE_KEY = "asu-no-sekkei:v1";
 
-export const DEFAULT_SETTINGS: Settings = { snapMinutes: 5 };
+export const DEFAULT_SETTINGS: Settings = { snapMinutes: 5, pxPerMinute: DEFAULT_PX_PER_MINUTE };
 
 export function emptyData(): AppData {
-  return { schemaVersion: 1, tasks: [], fixedEvents: [], settings: { ...DEFAULT_SETTINGS } };
+  return { schemaVersion: 2, tasks: [], fixedEvents: [], settings: { ...DEFAULT_SETTINGS } };
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -63,6 +63,11 @@ function sanitizeFixed(raw: unknown): FixedEvent | null {
     : [];
   if (weekdays.length === 0) return null;
   const now = new Date().toISOString();
+  // v1 には適用期間・休みの日がないので、制限なし・休みなしとして補う
+  let validFrom = isDateKey(raw.validFrom) ? raw.validFrom : null;
+  let validTo = isDateKey(raw.validTo) ? raw.validTo : null;
+  if (validFrom && validTo && validFrom > validTo) [validFrom, validTo] = [validTo, validFrom];
+  const skipDates = Array.isArray(raw.skipDates) ? [...new Set(raw.skipDates.filter(isDateKey))].sort() : [];
   return {
     id: raw.id,
     title: raw.title,
@@ -70,6 +75,9 @@ function sanitizeFixed(raw: unknown): FixedEvent | null {
     startMin: raw.startMin,
     endMin: raw.endMin,
     color: FIXED_COLORS.some((c) => c.key === raw.color) ? (raw.color as string) : DEFAULT_FIXED_COLOR,
+    validFrom,
+    validTo,
+    skipDates,
     createdAt: str(raw.createdAt, now),
     updatedAt: str(raw.updatedAt, now),
   };
@@ -95,10 +103,15 @@ export function parseAppData(json: string | null): LoadResult {
   const tasks = rawTasks.map(sanitizeTask).filter((t): t is Task => t !== null);
   const fixedEvents = rawFixed.map(sanitizeFixed).filter((e): e is FixedEvent => e !== null);
   const s = isObj(raw.settings) ? raw.settings : {};
-  const settings: Settings = { snapMinutes: s.snapMinutes === 1 ? 1 : 5 };
+  const settings: Settings = {
+    snapMinutes: s.snapMinutes === 1 ? 1 : 5,
+    pxPerMinute: (ZOOM_LEVELS as readonly number[]).includes(s.pxPerMinute as number)
+      ? (s.pxPerMinute as number)
+      : DEFAULT_PX_PER_MINUTE,
+  };
   const dropped = rawTasks.length - tasks.length + (rawFixed.length - fixedEvents.length);
   return {
-    data: { schemaVersion: 1, tasks, fixedEvents, settings },
+    data: { schemaVersion: 2, tasks, fixedEvents, settings },
     warning: dropped > 0 ? `読み込めなかったデータが${dropped}件あったため、除外しました` : null,
   };
 }

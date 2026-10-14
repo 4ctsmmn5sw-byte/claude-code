@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { formatDateLabel } from "@/lib/date";
 import { checkPlacement } from "@/lib/schedule";
 import { actions } from "@/lib/store";
 import { formatMinutes } from "@/lib/time";
 import type { DateKey, FixedEvent, Task } from "@/lib/types";
-import { ColorPicker } from "./TaskPanel";
+import { Modal } from "./Modal";
+import { ColorPicker } from "./TaskSheet";
 import { TimeInput } from "./TimeInput";
 
 /**
@@ -36,12 +37,6 @@ export function TaskDialog({
   const [start, setStart] = useState<number | null>(task.startMin);
   const [end, setEnd] = useState<number | null>(task.startMin !== null ? task.startMin + task.durationMin : null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
 
   const durationNum = Number(duration);
   const durationValid = Number.isInteger(durationNum) && durationNum >= 1 && durationNum <= 1440;
@@ -85,26 +80,7 @@ export function TaskDialog({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-neutral-900/30 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="task-dialog-title"
-        data-testid="task-dialog"
-        className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl"
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 id="task-dialog-title" className="text-base font-semibold text-neutral-900">
-            タスクを編集
-          </h2>
-          <button type="button" onClick={onClose} className="grid size-8 place-items-center rounded-full text-neutral-500 hover:bg-neutral-100" aria-label="閉じる">
-            ✕
-          </button>
-        </div>
-
+    <Modal title="タスクを編集" onClose={onClose} testId="task-dialog">
         <form
           className="flex flex-col gap-4"
           onSubmit={(e) => {
@@ -121,41 +97,34 @@ export function TaskDialog({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               maxLength={80}
-              className="h-10 rounded-lg border border-neutral-200 px-3 text-base outline-none focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200"
+              className="h-12 rounded-xl border border-neutral-200 px-4 text-base outline-none focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200"
             />
           </div>
 
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="flex flex-col gap-1">
-              <label htmlFor="task-duration" className="text-xs font-medium text-neutral-500">
-                所要時間（分）
-              </label>
-              <input
-                id="task-duration"
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={1440}
-                step={1}
-                value={duration}
-                onChange={(e) => changeDuration(e.target.value)}
-                className="h-10 w-28 rounded-lg border border-neutral-200 px-3 text-base tabular-nums outline-none focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-neutral-500">色</span>
-              <ColorPicker value={color} onChange={setColor} />
-            </div>
-          </div>
-
-          <fieldset className="rounded-xl bg-neutral-50 p-3 ring-1 ring-neutral-200/70">
-            <legend className="sr-only">時刻</legend>
+          <fieldset className="rounded-2xl bg-neutral-50 p-3 ring-1 ring-neutral-200/70">
+            <legend className="sr-only">時刻と所要時間（1分単位）</legend>
             <p className="mb-2 text-xs text-neutral-500">
               {placed ? `${formatDateLabel(targetDate)}に配置中` : `開始時刻を入れると${formatDateLabel(targetDate)}に配置します`}
             </p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-2">
               <TimeInput id="task-start" label="開始" value={start} onChange={changeStart} invalid={placementCheck?.ok === false} />
               <TimeInput id="task-end" label="終了" value={end} onChange={changeEnd} allow24 invalid={placementCheck?.ok === false} />
+              <div className="flex flex-col gap-1">
+                <label htmlFor="task-duration" className="text-xs font-medium text-neutral-500">
+                  所要（分）
+                </label>
+                <input
+                  id="task-duration"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={1440}
+                  step={1}
+                  value={duration}
+                  onChange={(e) => changeDuration(e.target.value)}
+                  className="h-12 w-full rounded-xl border border-neutral-200 bg-white px-3 text-base tabular-nums outline-none focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200"
+                />
+              </div>
             </div>
             {placementCheck && !placementCheck.ok && (
               <p className="mt-2 text-xs text-rose-600" role="alert">
@@ -169,10 +138,15 @@ export function TaskDialog({
             )}
           </fieldset>
 
+          <div>
+            <span className="mb-1 block text-xs font-medium text-neutral-500">色</span>
+            <ColorPicker value={color} onChange={setColor} />
+          </div>
+
           {error && <p className="text-sm text-rose-600">{error}</p>}
 
           <div className="flex flex-wrap items-center gap-2">
-            <button type="submit" className="h-10 rounded-lg bg-neutral-900 px-5 text-sm font-medium text-white hover:bg-neutral-700">
+            <button type="submit" className="h-12 w-full rounded-xl bg-neutral-900 text-base font-semibold text-white active:bg-neutral-700">
               保存
             </button>
             <button
@@ -181,7 +155,7 @@ export function TaskDialog({
                 actions.toggleDone(task.id);
                 onClose();
               }}
-              className="h-10 rounded-lg px-3 text-sm text-neutral-700 ring-1 ring-neutral-200 hover:bg-neutral-50"
+              className="h-11 flex-1 rounded-xl px-3 text-sm text-neutral-700 ring-1 ring-neutral-200 active:bg-neutral-50"
             >
               {task.done ? "未完了に戻す" : "完了にする"}
             </button>
@@ -193,7 +167,7 @@ export function TaskDialog({
                   notify("未配置に戻しました");
                   onClose();
                 }}
-                className="h-10 rounded-lg px-3 text-sm text-neutral-700 ring-1 ring-neutral-200 hover:bg-neutral-50"
+                className="h-11 flex-1 rounded-xl px-3 text-sm text-neutral-700 ring-1 ring-neutral-200 active:bg-neutral-50"
               >
                 未配置に戻す
               </button>
@@ -206,13 +180,12 @@ export function TaskDialog({
                 notify("削除しました");
                 onClose();
               }}
-              className="ml-auto h-10 rounded-lg px-3 text-sm text-rose-600 hover:bg-rose-50"
+              className="h-11 flex-1 rounded-xl px-3 text-sm text-rose-600 ring-1 ring-rose-100 active:bg-rose-50"
             >
               削除
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }
