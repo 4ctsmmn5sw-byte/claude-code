@@ -39,3 +39,17 @@ export function taskColor(key: string): ColorDef {
 export function fixedColor(key: string): ColorDef {
   return FIXED_COLORS.find((c) => c.key === key) ?? FIXED_COLORS[0];
 }
+
+/** タスクを毎週の固定予定にするときの初期色（タスクの色に近い、落ち着いた色） */
+const TASK_TO_FIXED: Record<string, string> = {
+  blue: "indigo",
+  violet: "indigo",
+  green: "olive",
+  teal: "slate",
+  amber: "stone",
+  rose: "stone",
+};
+
+export function fixedColorForTask(taskColorKey: string): string {
+  return TASK_TO_FIXED[taskColorKey] ?? DEFAULT_FIXED_COLOR;
+}

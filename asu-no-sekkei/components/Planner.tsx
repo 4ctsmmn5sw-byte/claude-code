@@ -6,11 +6,12 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTokyoNowMinutes, useTokyoToday } from "@/hooks/useTokyoClock";
 import { useToast } from "@/hooks/useToast";
-import { addDays } from "@/lib/date";
+import { addDays, formatDateLabel } from "@/lib/date";
 import {
   checkPlacement,
   conflictingTaskIds,
   fixedEventsForDate,
+  overlaps,
   placedTasksForDate,
   skippedFixedEventsForDate,
   unplacedTasks,
@@ -595,11 +596,29 @@ function PlannerView({ data, warning, today }: { data: AppData; warning: string 
             show("この日だけ休みにしました", "info", { label: "元に戻す", run: () => actions.unskipFixedEventOn(id, viewDate) });
           }}
           onUnskip={() => {
-            actions.unskipFixedEventOn(fixedMenu.event.id, viewDate);
+            const e = fixedMenu.event;
+            // 休みの間に入れたタスクと重なる場合も、タスクは動かさず警告だけ出す
+            const clash = dayTasks.filter((t) => overlaps(e.startMin, e.endMin, t.startMin, t.startMin + t.durationMin));
+            actions.unskipFixedEventOn(e.id, viewDate);
             setFixedMenu(null);
-            show("休みを取り消しました");
+            if (clash.length > 0) {
+              show(`休みを取り消しました。「${clash.map((t) => t.title).join("」「")}」と重なっています（タスクはそのままです）`, "error");
+            } else {
+              show("休みを取り消しました");
+            }
           }}
           onEditWeekly={() => router.push(`/settings?edit=${encodeURIComponent(fixedMenu.event.id)}`)}
+          onEndRepeat={(lastDate) => {
+            const id = fixedMenu.event.id;
+            const r = actions.endFixedEventRepeat(id, lastDate);
+            setFixedMenu(null);
+            if (!r.ok) return show(r.message, "error");
+            const previous = r.previousValidTo ?? null;
+            show(`毎週の繰り返しを${formatDateLabel(lastDate)}までで終了しました`, "info", {
+              label: "元に戻す",
+              run: () => actions.setFixedEventValidTo(id, previous),
+            });
+          }}
         />
       )}
       <Toast toast={toast} onClose={hide} />

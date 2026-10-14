@@ -5,18 +5,14 @@ import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { DEFAULT_FIXED_COLOR, FIXED_COLORS, fixedColor } from "@/lib/colors";
 import { formatDateLabel, WEEKDAY_LABELS, WEEKDAY_ORDER } from "@/lib/date";
+import { ruleConflicts } from "@/lib/schedule";
 import { actions, useAppStore } from "@/lib/store";
 import { formatMinutes } from "@/lib/time";
-import type { AppData, DateKey, FixedEvent, SnapMinutes, Weekday } from "@/lib/types";
+import type { AppData, DateKey, FixedEvent, SnapMinutes, Task, Weekday } from "@/lib/types";
 import { Modal } from "./Modal";
 import { ColorPicker } from "./TaskSheet";
 import { TimeInput } from "./TimeInput";
-
-const PRESETS: { label: string; days: Weekday[] }[] = [
-  { label: "平日", days: [1, 2, 3, 4, 5] },
-  { label: "土日", days: [0, 6] },
-  { label: "毎日", days: [0, 1, 2, 3, 4, 5, 6] },
-];
+import { ConflictWarning, DateField, WeekdayPicker } from "./WeeklyFields";
 
 export function SettingsView() {
   const store = useAppStore();
@@ -34,7 +30,7 @@ function periodLabel(e: FixedEvent): string | null {
 }
 
 function SettingsContent({ data, editParam }: { data: AppData; editParam: string | null }) {
-  const { fixedEvents, settings } = data;
+  const { fixedEvents, settings, tasks } = data;
   // タイムラインの「毎週の予定を編集する」から来たときは、その予定の編集画面を開いた状態で始める
   const [editing, setEditing] = useState<FixedEvent | "new" | null>(
     () => (editParam && fixedEvents.find((e) => e.id === editParam)) || null,
@@ -150,6 +146,8 @@ function SettingsContent({ data, editParam }: { data: AppData; editParam: string
         <FixedEventForm
           key={editing === "new" ? "new" : editing.id}
           initial={editing === "new" ? null : (fixedEvents.find((e) => e.id === editing.id) ?? editing)}
+          tasks={tasks}
+          fixedEvents={fixedEvents}
           onClose={() => setEditing(null)}
           onDone={(msg) => {
             setEditing(null);
@@ -195,37 +193,16 @@ function WeekOverview({ events, onEdit }: { events: FixedEvent[]; onEdit: (e: Fi
   );
 }
 
-function DateField({ id, label, value, onChange }: { id: string; label: string; value: DateKey | null; onChange: (v: DateKey | null) => void }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <label htmlFor={id} className="text-xs font-medium text-neutral-500">
-        {label}
-      </label>
-      <div className="flex items-center gap-1">
-        <input
-          id={id}
-          type="date"
-          value={value ?? ""}
-          onChange={(e) => onChange(e.target.value || null)}
-          className="h-12 min-w-0 flex-1 rounded-xl border border-neutral-200 bg-white px-3 text-base tabular-nums outline-none focus:border-neutral-400"
-        />
-        {value && (
-          <button type="button" onClick={() => onChange(null)} className="h-12 shrink-0 px-2 text-xs text-neutral-500" aria-label={`${label}を指定なしにする`}>
-            解除
-          </button>
-        )}
-      </div>
-      {!value && <span className="text-[11px] text-neutral-400">指定なし</span>}
-    </div>
-  );
-}
-
 function FixedEventForm({
   initial,
+  tasks,
+  fixedEvents,
   onClose,
   onDone,
 }: {
   initial: FixedEvent | null;
+  tasks: Task[];
+  fixedEvents: FixedEvent[];
   onClose: () => void;
   onDone: (message: string) => void;
 }) {
@@ -238,7 +215,17 @@ function FixedEventForm({
   const [color, setColor] = useState(initial?.color ?? DEFAULT_FIXED_COLOR);
   const [error, setError] = useState<string | null>(null);
 
-  const toggle = (w: Weekday) => setWeekdays((cur) => (cur.includes(w) ? cur.filter((x) => x !== w) : [...cur, w]));
+  // 曜日・時刻・期間の変更で既存の予定と重なる場合は警告する（予定は削除・移動しない）
+  const conflicts =
+    start !== null && end !== null && end > start && weekdays.length > 0
+      ? ruleConflicts(
+          { weekdays, startMin: start, endMin: end, validFrom, validTo, skipDates: initial?.skipDates },
+          tasks,
+          fixedEvents,
+          { excludeEventId: initial?.id },
+        )
+      : { tasks: [], fixed: [] };
+  const hasConflicts = conflicts.tasks.length + conflicts.fixed.length > 0;
 
   return (
     <Modal title={initial ? "毎週の予定を編集" : "固定予定を追加"} onClose={onClose} testId="fixed-form">
@@ -266,36 +253,7 @@ function FixedEventForm({
           />
         </div>
 
-        <fieldset>
-          <legend className="mb-1.5 text-xs font-medium text-neutral-500">毎週繰り返す曜日（複数選択できます）</legend>
-          <div className="flex justify-between gap-1">
-            {WEEKDAY_ORDER.map((w) => (
-              <button
-                key={w}
-                type="button"
-                aria-pressed={weekdays.includes(w)}
-                onClick={() => toggle(w)}
-                className={`size-11 rounded-full text-sm font-medium transition ${
-                  weekdays.includes(w) ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-700 active:bg-neutral-200"
-                }`}
-              >
-                {WEEKDAY_LABELS[w]}
-              </button>
-            ))}
-          </div>
-          <div className="mt-2 flex gap-1.5">
-            {PRESETS.map((p) => (
-              <button
-                key={p.label}
-                type="button"
-                onClick={() => setWeekdays(p.days)}
-                className="h-11 flex-1 rounded-full text-sm text-neutral-600 ring-1 ring-neutral-200 active:bg-neutral-100"
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-        </fieldset>
+        <WeekdayPicker legend="毎週繰り返す曜日（複数選択できます）" value={weekdays} onChange={setWeekdays} />
 
         <div className="grid grid-cols-2 gap-3">
           <TimeInput id="fixed-start" label="開始時刻" value={start} onChange={setStart} />
@@ -332,9 +290,12 @@ function FixedEventForm({
           </div>
         )}
 
+        <ConflictWarning conflicts={conflicts} />
+
         {error && <p className="text-sm text-rose-600">{error}</p>}
 
         <button type="submit" className="h-12 rounded-xl bg-neutral-900 text-base font-semibold text-white active:bg-neutral-700">
+          {hasConflicts ? "重なりを確認して" : ""}
           {initial ? "更新" : "登録"}
         </button>
         {initial && (
