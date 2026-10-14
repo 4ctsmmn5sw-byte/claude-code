@@ -105,6 +105,10 @@ export interface GoalStep {
   order: number;
   /** 先に終わらせる必要がある工程の ID（同じ目標内） */
   dependsOn: string[];
+  /** 工程の優先度（任意。AI の提案や手入力で設定） */
+  priority?: GoalPriority | null;
+  /** 必要時間が AI の推定値のままか（編集すると false） */
+  aiEstimated?: boolean;
   createdAt: string;
   updatedAt: string;
 }

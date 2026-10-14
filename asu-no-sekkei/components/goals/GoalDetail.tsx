@@ -17,6 +17,9 @@ import {
 import { actions } from "@/lib/store";
 import { formatDuration, formatMinutes } from "@/lib/time";
 import type { AppData, DateKey, Goal, GoalStep } from "@/lib/types";
+import { Modal } from "../Modal";
+import { AiPlanSheet } from "./AiPlanSheet";
+import { TomorrowPicker } from "./TomorrowPicker";
 import { GoalForm } from "./GoalForm";
 import { StepForm } from "./StepForm";
 import { WorkLogForm } from "./WorkLogForm";
@@ -46,6 +49,8 @@ export function GoalDetail({
   const [editing, setEditing] = useState(false);
   const [stepForm, setStepForm] = useState<GoalStep | "new" | null>(null);
   const [logging, setLogging] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [tomorrowOpen, setTomorrowOpen] = useState(false);
   const steps = stepsOf(data.goalSteps, goal.id);
   const st = goalStats(goal, data.goalSteps, data.workLogs, today);
   const logs = data.workLogs.filter((l) => l.goalId === goal.id).sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
@@ -170,6 +175,22 @@ export function GoalDetail({
           >
             ＋ 工程を追加
           </button>
+          <button
+            type="button"
+            onClick={() => setAiOpen(true)}
+            className="mt-2 h-12 w-full rounded-2xl bg-violet-50 text-[15px] font-medium text-violet-800 active:bg-violet-100"
+          >
+            ✨ AIに工程を提案してもらう
+          </button>
+          {steps.some((s) => s.status === "todo" || s.status === "doing") && (
+            <button
+              type="button"
+              onClick={() => setTomorrowOpen(true)}
+              className="mt-2 h-12 w-full rounded-2xl bg-white text-[15px] font-medium text-neutral-800 ring-1 ring-neutral-200 active:bg-neutral-50"
+            >
+              📅 明日の時間割に追加
+            </button>
+          )}
         </section>
 
         {/* 実績 */}
@@ -273,6 +294,32 @@ export function GoalDetail({
           }
         />
       )}
+      {tomorrowOpen && (
+        <Modal title="明日の時間割に追加" onClose={() => setTomorrowOpen(false)} testId="tomorrow-sheet">
+          <TomorrowPicker goalId={goal.id} today={today} onDone={() => setTomorrowOpen(false)} />
+        </Modal>
+      )}
+      {aiOpen && (
+        <AiPlanSheet
+          today={today}
+          initialGoal={{
+            title: goal.title,
+            description: goal.description,
+            successCriteria: goal.successCriteria,
+            deadline: goal.deadline,
+            priority: goal.priority,
+            estimatedMinutes: goal.estimatedMinutes,
+            category: goal.category,
+            status: goal.status,
+          }}
+          existingGoal={{ id: goal.id, stepTitles: steps.map((s) => s.title) }}
+          onClose={() => setAiOpen(false)}
+          onSaved={(_, n) => {
+            setAiOpen(false);
+            notify(`AI の提案から${n}つの工程を追加しました`);
+          }}
+        />
+      )}
       {logging && <WorkLogForm goalId={goal.id} steps={steps} today={today} onClose={() => setLogging(false)} />}
     </>
   );
@@ -319,6 +366,8 @@ function StepRow({
               {STEP_STATUS_LABELS[step.status]}
             </span>
             {step.estimatedMinutes !== null && <span className="tabular-nums">・{formatDuration(step.estimatedMinutes)}</span>}
+            {step.aiEstimated && step.estimatedMinutes !== null && <span className="rounded bg-amber-50 px-1 text-amber-800">AI推定</span>}
+            {step.priority && <span className={step.priority === "high" ? "text-rose-600" : ""}>・優先度{PRIORITY_LABELS[step.priority]}</span>}
           </span>
           <span className={`mt-0.5 block text-[15px] leading-snug ${done || step.status === "skipped" ? "text-neutral-400 line-through" : "text-neutral-900"}`}>
             {step.title}

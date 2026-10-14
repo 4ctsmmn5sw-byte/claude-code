@@ -17,6 +17,7 @@ export function GoalForm({
   categories,
   onClose,
   onSaved,
+  onAiPlan,
 }: {
   initial: Goal | null;
   defaultStatus: GoalStatus;
@@ -24,6 +25,8 @@ export function GoalForm({
   categories: string[];
   onClose: () => void;
   onSaved: (id: string) => void;
+  /** 「AIに計画を作ってもらう」（新しい目標のときだけ） */
+  onAiPlan?: (input: GoalInput) => void;
 }) {
   const [v, setV] = useState<GoalInput>(() => ({
     title: initial?.title ?? "",
@@ -91,8 +94,20 @@ export function GoalForm({
         </div>
 
         {error && <p className="text-sm text-rose-600">{error}</p>}
+        {!initial && onAiPlan && (
+          <button
+            type="button"
+            onClick={() => {
+              if (!v.title.trim()) return setError("目標名を入力してください");
+              onAiPlan(v);
+            }}
+            className="h-12 rounded-xl bg-violet-600 text-base font-semibold text-white active:bg-violet-700"
+          >
+            ✨ AIに計画を作ってもらう
+          </button>
+        )}
         <button type="submit" className="h-12 rounded-xl bg-neutral-900 text-base font-semibold text-white active:bg-neutral-700">
-          {initial ? "保存" : "目標を追加"}
+          {initial ? "保存" : onAiPlan ? "工程は自分で作る（目標だけ追加）" : "目標を追加"}
         </button>
       </form>
     </Modal>

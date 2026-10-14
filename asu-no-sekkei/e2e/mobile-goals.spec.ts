@@ -31,7 +31,7 @@ async function addGoal(page: Page, o: { title: string; status?: "やりたいこ
   if (o.hours) await f.getByLabel("想定必要時間（任意）（時間）").fill(o.hours);
   await f.getByRole("radio", { name: "高" }).tap();
   await f.getByRole("button", { name: "資格" }).tap();
-  await f.getByRole("button", { name: /^(目標を追加|保存)$/ }).tap();
+  await f.getByRole("button", { name: /^(目標を追加|保存|工程は自分で作る（目標だけ追加）)$/ }).tap();
 }
 
 async function addStep(page: Page, title: string, hours: string, minutes: string, depends: string[] = []) {

@@ -24,6 +24,15 @@
 - 作業時間の実績と達成は別に管理：目標のタスクを完了すると実績を自動記録（未完了に戻すと取り消し）、手入力も可。「目標を達成した」は別に記録
 - 工程は自動では完了にせず、タスク完了時に「工程も完了にしますか？」と確認
 
+### AI による目標の分解（Gemini API 無料枠）
+- 目標の入力画面の「✨ AIに計画を作ってもらう」、目標詳細の「✨ AIに工程を提案してもらう」
+- AI が必要なときだけ質問 → 工程・推定時間・順序・優先度・期限の見立て（理由つき）を提案 → 自由に編集 → **保存を押したときだけ**保存
+- 期限までに使える時間・不足時間はアプリが計算（AI を使わない）。必要時間は「AI推定」と表示
+- 保存した工程は「📅 明日の時間割に追加」で明日の空き時間に配置（空きがなければ未配置のまま）
+- API キーはサーバー側の環境変数 `GEMINI_API_KEY` だけで扱い、ブラウザ・localStorage・GitHub には置かない。未設定なら仮データで動作
+- 本人確認（`APP_PASSCODE`）・1 日 10 回の上限・入力文字数の上限あり。無料枠を超えたら停止（有料 API には切り替えない）
+- 設定と無料枠の条件は [docs/ROADMAP.md](docs/ROADMAP.md#第2段階ai-による目標分解gemini-api-無料枠-実装済み)、環境変数の一覧は `.env.example`
+
 ### バックアップと復元（設定画面）
 - 「バックアップを書き出す」で全データを JSON ファイルに保存
 - 「ファイルから復元」は件数の比較を確認してから置き換え。置き換える前のデータはこのブラウザ内に自動退避（失敗したら復元を中止）
@@ -125,6 +134,7 @@ localStorage のキー `asu-no-sekkei:v1` に次の形で保存します（v1・
 - Next.js 16（App Router）/ React 19 / TypeScript / Tailwind CSS v4
 - ドラッグ＆ドロップ：[`@dnd-kit/react`](https://dndkit.com/react) 0.5（`PointerSensor` の活性化条件：タッチ＝300ms 長押し、マウス＝4px 移動。標準の `AutoScroller` は外し、下部シートを考慮した自動スクロールを自前で実装）
 - 長さ変更・シートの引き上げ：Pointer Events
+- AI：[`@google/genai`](https://www.npmjs.com/package/@google/genai)（公式 Google GenAI SDK、サーバー側のみ）、応答の検証に zod
 - テスト：Vitest（ロジック）、Playwright（iPhone 14 サイズのタッチ操作、PC のマウス操作、日付）
 
 ```
@@ -132,7 +142,10 @@ app/            page.tsx（タイムライン）, settings/page.tsx（固定予�
 components/     Planner（ドラッグ・自動スクロール・選択の中心）, Timeline, TimelineTaskBlock, TaskSheet（下部シート）,
                 BottomNav, Header, TaskDialog, AddTaskSheet, FixedEventSheet, SettingsView, Modal, TimeInput, Toast
 hooks/          useTokyoClock, useToast
-lib/            types, time（分変換・吸着・倍率）, date（JST・曜日）, schedule（重複判定・固定予定の展開）,
+app/api/ai/     plan（目標の分解）, session（状態・本人確認・モデルの確認）
+lib/server/     config, auth, rateLimit, gemini, handlers（サーバー側のみ）
+lib/ai/         planSchema（入出力の検証）, feasibility（期限までの計算）, client
+lib/            slots（空き時間の検索）, types, time（分変換・吸着・倍率）, date（JST・曜日）, schedule（重複判定・固定予定の展開）,
                 storage（Repository・検証・移行）, store（状態と保存）, colors
 tests/          Vitest
 e2e/            Playwright
