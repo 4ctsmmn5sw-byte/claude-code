@@ -20,7 +20,8 @@ import { actions, useAppStore } from "@/lib/store";
 import { anchoredScrollTop, clamp, DAY_MINUTES, formatMinutes, pointerToStartMinutes, ZOOM_LEVELS } from "@/lib/time";
 import type { AppData, DateKey, FixedEvent } from "@/lib/types";
 import { AddTaskSheet } from "./AddTaskSheet";
-import { BottomNav } from "./BottomNav";
+import { AppNav } from "./AppNav";
+import { toggleDoneWithPrompt } from "./taskDone";
 import { FixedEventSheet } from "./FixedEventSheet";
 import { Header } from "./Header";
 import { TaskDialog } from "./TaskDialog";
@@ -71,10 +72,13 @@ interface DragSession {
 
 type Over = "timeline" | "sheet" | null;
 
-/** 設定画面から戻ったときに表示中の日付を保つ（再読み込みでは明日に戻る） */
-let rememberedDate: { date: DateKey; today: DateKey } | null = null;
+/** 設定画面などから戻ったときに表示中の日付を保つ（再読み込みでは初期表示に戻る）。画面ごとに別 */
+const rememberedDates: Partial<Record<PlannerMode, { date: DateKey; today: DateKey }>> = {};
 
-export function Planner() {
+/** plan：計画（初期表示は明日）／today：実行（初期表示は今日） */
+export type PlannerMode = "plan" | "today";
+
+export function Planner({ mode = "plan" }: { mode?: PlannerMode }) {
   const store = useAppStore();
   const today = useTokyoToday();
 
@@ -85,16 +89,18 @@ export function Planner() {
       </div>
     );
   }
-  return <PlannerView data={store.data} warning={store.warning} today={today} />;
+  return <PlannerView data={store.data} warning={store.warning} today={today} mode={mode} />;
 }
 
-function PlannerView({ data, warning, today }: { data: AppData; warning: string | null; today: DateKey }) {
+function PlannerView({ data, warning, today, mode }: { data: AppData; warning: string | null; today: DateKey; mode: PlannerMode }) {
   const router = useRouter();
-  const [viewDate, setViewDateState] = useState<DateKey>(() =>
-    rememberedDate && rememberedDate.today === today ? rememberedDate.date : addDays(today, 1),
-  );
+  const [viewDate, setViewDateState] = useState<DateKey>(() => {
+    const remembered = rememberedDates[mode];
+    if (remembered && remembered.today === today) return remembered.date;
+    return mode === "today" ? today : addDays(today, 1);
+  });
   const setViewDate = (d: DateKey) => {
-    rememberedDate = { date: d, today };
+    rememberedDates[mode] = { date: d, today };
     setViewDateState(d);
   };
   const [sheetMode, setSheetMode] = useState<SheetMode>("peek");
@@ -125,6 +131,7 @@ function PlannerView({ data, warning, today }: { data: AppData; warning: string 
   const daySkipped = useMemo(() => skippedFixedEventsForDate(fixedEvents, viewDate), [fixedEvents, viewDate]);
   const dayTasks = useMemo(() => placedTasksForDate(tasks, viewDate), [tasks, viewDate]);
   const pool = useMemo(() => unplacedTasks(tasks), [tasks]);
+  const goalTitles = useMemo(() => new Map(data.goals.map((g) => [g.id, g.title])), [data.goals]);
   const conflicts = useMemo(() => conflictingTaskIds(tasks, fixedEvents, viewDate), [tasks, fixedEvents, viewDate]);
   const editing = editingId ? tasks.find((t) => t.id === editingId) ?? null : null;
   const selected = selectedId ? dayTasks.find((t) => t.id === selectedId) ?? null : null;
@@ -326,7 +333,6 @@ function PlannerView({ data, warning, today }: { data: AppData; warning: string 
     }
   };
 
-  const activeTab = sheetMode === "open" && !placing && !selected ? "tasks" : "schedule";
 
   const topBar = placing ? (
     <div className="flex flex-1 items-center gap-2 pl-5 pr-2" data-testid="placing-bar">
@@ -349,7 +355,7 @@ function PlannerView({ data, warning, today }: { data: AppData; warning: string 
       <BarButton label="編集" onClick={() => setEditingId(selected.id)} icon="M4 14.5V16h1.5l8-8L12 6.5l-8 8ZM13.5 5 15 6.5" />
       <BarButton
         label={selected.done ? "未完了" : "完了"}
-        onClick={() => actions.toggleDone(selected.id)}
+        onClick={() => toggleDoneWithPrompt(selected.id, show)}
         icon="m4.5 10.5 3.5 3.5 7.5-8"
       />
       <BarButton
@@ -519,9 +525,18 @@ function PlannerView({ data, warning, today }: { data: AppData; warning: string 
           <TaskSheet
             sheetRef={sheetRef}
             tasks={pool}
+            onAdd={() => setAdding(true)}
+            goalTitles={goalTitles}
             mode={placing || selected ? "peek" : sheetMode}
             openHeight={openHeight}
-            onModeChange={setSheetMode}
+            onModeChange={(m) => {
+              // 一覧を開くときは選択・タップ配置を解除する
+              if (m === "open") {
+                setSelectedId(null);
+                setPlacingId(null);
+              }
+              setSheetMode(m);
+            }}
             topBar={topBar}
             highlight={over === "sheet" && dragSession?.kind === "placed"}
             onTapTask={(id) => {
@@ -530,24 +545,11 @@ function PlannerView({ data, warning, today }: { data: AppData; warning: string 
               setSheetMode("peek");
             }}
             onEditTask={setEditingId}
-            onToggleDone={actions.toggleDone}
+            onToggleDone={(id) => toggleDoneWithPrompt(id, show)}
           />
         </div>
 
-        <BottomNav
-          active={activeTab}
-          taskCount={pool.filter((t) => !t.done).length}
-          onSchedule={() => {
-            setPlacingId(null);
-            setSheetMode("peek");
-          }}
-          onTasks={() => {
-            setPlacingId(null);
-            setSelectedId(null);
-            setSheetMode("open");
-          }}
-          onAdd={() => setAdding(true)}
-        />
+        <AppNav active={mode === "today" ? "today" : "plan"} />
       </div>
 
       {/* 指に付いてくるカード。タイムライン上ではプレビュー枠を見せるため消す */}
@@ -571,6 +573,15 @@ function PlannerView({ data, warning, today }: { data: AppData; warning: string 
           fixedEvents={fixedEvents}
           onClose={() => setEditingId(null)}
           notify={show}
+          link={
+            editing.goalId && goalTitles.has(editing.goalId)
+              ? {
+                  goalId: editing.goalId,
+                  goal: goalTitles.get(editing.goalId)!,
+                  step: data.goalSteps.find((s) => s.id === editing.stepId)?.title ?? null,
+                }
+              : undefined
+          }
         />
       )}
       {adding && (

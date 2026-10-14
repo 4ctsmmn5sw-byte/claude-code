@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import type { ToastAction } from "@/hooks/useToast";
 import { FIXED_COLORS, fixedColorForTask } from "@/lib/colors";
@@ -11,6 +12,7 @@ import type { DateKey, FixedEvent, Task, Weekday } from "@/lib/types";
 import { Modal } from "./Modal";
 import { ColorPicker } from "./TaskSheet";
 import { TimeInput } from "./TimeInput";
+import { toggleDoneWithPrompt } from "./taskDone";
 import { ConflictWarning, DateField, WeekdayPicker } from "./WeeklyFields";
 
 type Repeat = "none" | "weekly";
@@ -28,6 +30,7 @@ export function TaskDialog({
   fixedEvents,
   onClose,
   notify,
+  link,
 }: {
   task: Task;
   viewDate: DateKey;
@@ -35,6 +38,8 @@ export function TaskDialog({
   fixedEvents: FixedEvent[];
   onClose: () => void;
   notify: (message: string, tone?: "info" | "error", action?: ToastAction) => void;
+  /** 目標の工程から作ったタスクの場合の目標名・工程名 */
+  link?: { goalId: string; goal: string; step: string | null };
 }) {
   const placed = task.date !== null && task.startMin !== null;
   const targetDate = task.date ?? viewDate;
@@ -132,6 +137,19 @@ export function TaskDialog({
 
   return (
     <Modal title="タスクを編集" onClose={onClose} testId="task-dialog">
+        {link && (
+          <Link
+            href={`/goals?id=${encodeURIComponent(link.goalId)}`}
+            data-testid="task-link"
+            className="mb-3 flex min-h-11 items-center gap-2 rounded-2xl bg-violet-50 px-4 py-2 text-xs text-violet-900"
+          >
+            <span aria-hidden>◎</span>
+            <span className="min-w-0 flex-1 truncate">
+              目標「{link.goal}」{link.step && ` ・ 工程「${link.step}」`}
+            </span>
+            <span className="shrink-0 text-violet-500">目標を開く</span>
+          </Link>
+        )}
         <form
           className="flex flex-col gap-4"
           onSubmit={(e) => {
@@ -259,7 +277,7 @@ export function TaskDialog({
             <button
               type="button"
               onClick={() => {
-                actions.toggleDone(task.id);
+                toggleDoneWithPrompt(task.id, notify);
                 onClose();
               }}
               className="h-11 flex-1 rounded-xl px-3 text-sm text-neutral-700 ring-1 ring-neutral-200 active:bg-neutral-50"

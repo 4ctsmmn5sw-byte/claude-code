@@ -12,6 +12,7 @@ import type { AppData, DateKey, FixedEvent, SnapMinutes, Task, Weekday } from "@
 import { Modal } from "./Modal";
 import { ColorPicker } from "./TaskSheet";
 import { TimeInput } from "./TimeInput";
+import { BackupSection } from "./BackupSection";
 import { ConflictWarning, DateField, WeekdayPicker } from "./WeeklyFields";
 
 export function SettingsView() {
@@ -135,10 +136,12 @@ function SettingsContent({ data, editParam }: { data: AppData; editParam: string
           </div>
         </section>
 
+        <BackupSection data={data} onMessage={setMessage} />
+
         <section className="rounded-3xl bg-white p-4 text-xs leading-relaxed text-neutral-500 ring-1 ring-neutral-200/80">
           <h2 className="mb-1 text-[15px] font-semibold text-neutral-900">データの保存について</h2>
           データはこのブラウザ（localStorage）にのみ保存されます。別の端末やブラウザには自動で同期されません。
-          ブラウザのサイトデータを消去すると、タスクと固定予定も消えます。
+          ブラウザのサイトデータを消去すると、タスク・固定予定・目標も消えます。定期的にバックアップを書き出してください。
         </section>
       </main>
 

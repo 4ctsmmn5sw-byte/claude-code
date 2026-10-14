@@ -1,10 +1,25 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { saveSnapshot } from "./backup";
+import { isDateKey, todayKey } from "./date";
+import { wouldCreateCycle } from "./goals";
 import { checkPlacement } from "./schedule";
 import { DAY_MINUTES } from "./time";
-import { emptyData, LocalStorageRepository, STORAGE_KEY, type Repository } from "./storage";
-import type { AppData, DateKey, FixedEvent, Settings, Task } from "./types";
+import { emptyData, LocalStorageRepository, MAX_ESTIMATE_MINUTES, STORAGE_KEY, type Repository } from "./storage";
+import type {
+  AppData,
+  DateKey,
+  FixedEvent,
+  Goal,
+  GoalPriority,
+  GoalStatus,
+  GoalStep,
+  Settings,
+  StepStatus,
+  Task,
+  WorkLog,
+} from "./types";
 
 /**
  * アプリの状態を 1 か所に持ち、変更のたびに Repository へ保存する外部ストア。
@@ -88,6 +103,34 @@ const nowIso = () => new Date().toISOString();
 function updateTask(id: string, patch: Partial<Task>) {
   const d = data();
   commit({ ...d, tasks: d.tasks.map((t) => (t.id === id ? { ...t, ...patch, updatedAt: nowIso() } : t)) });
+}
+
+function updateGoal(id: string, patch: Partial<Goal>) {
+  const d = data();
+  commit({ ...d, goals: d.goals.map((g) => (g.id === id ? { ...g, ...patch, updatedAt: nowIso() } : g)) });
+}
+
+function validEstimate(min: number): boolean {
+  return Number.isInteger(min) && min >= 1 && min <= MAX_ESTIMATE_MINUTES;
+}
+
+export interface GoalInput {
+  title: string;
+  description: string;
+  successCriteria: string;
+  deadline: DateKey | null;
+  priority: GoalPriority;
+  estimatedMinutes: number | null;
+  category: string;
+  status: GoalStatus;
+}
+
+export interface StepInput {
+  title: string;
+  note: string;
+  estimatedMinutes: number | null;
+  status: StepStatus;
+  dependsOn: string[];
 }
 
 function validDuration(min: number): boolean {
@@ -209,9 +252,37 @@ export const actions = {
     updateTask(id, { date: null, startMin: null });
   },
 
-  toggleDone(id: string) {
-    const task = data().tasks.find((t) => t.id === id);
-    if (task) updateTask(id, { done: !task.done });
+  /**
+   * 完了状態を切り替える。目標に紐づくタスクを完了にしたときは作業時間の実績（WorkLog）を記録し、
+   * 未完了に戻したときはそのタスクから記録した実績を取り消す。工程の状態は自動では変えない。
+   */
+  toggleDone(id: string): { done: boolean; step: GoalStep | null } {
+    const d = data();
+    const task = d.tasks.find((t) => t.id === id);
+    if (!task) return { done: false, step: null };
+    const done = !task.done;
+    const now = nowIso();
+    const tasks = d.tasks.map((t) => (t.id === id ? { ...t, done, updatedAt: now } : t));
+    let workLogs = d.workLogs.filter((l) => l.taskId !== id);
+    const goal = task.goalId ? d.goals.find((g) => g.id === task.goalId) : undefined;
+    if (done && goal) {
+      workLogs = [
+        ...workLogs,
+        {
+          id: newId(),
+          goalId: goal.id,
+          stepId: task.stepId ?? null,
+          taskId: task.id,
+          date: task.date ?? todayKey(),
+          minutes: task.durationMin,
+          note: "",
+          createdAt: now,
+        },
+      ];
+    }
+    commit({ ...d, tasks, workLogs });
+    const step = task.stepId ? (d.goalSteps.find((s) => s.id === task.stepId) ?? null) : null;
+    return { done, step };
   },
 
   deleteTask(id: string) {
@@ -311,6 +382,204 @@ export const actions = {
   deleteFixedEvent(id: string) {
     const d = data();
     commit({ ...d, fixedEvents: d.fixedEvents.filter((e) => e.id !== id) });
+  },
+
+  /* ---------- 目標 ---------- */
+
+  saveGoal(input: GoalInput & { id?: string }): ActionResult & { id?: string } {
+    const title = input.title.trim();
+    if (!title) return { ok: false, message: "目標名を入力してください" };
+    if (input.deadline !== null && !isDateKey(input.deadline)) return { ok: false, message: "達成期限の日付が正しくありません" };
+    if (input.estimatedMinutes !== null && !validEstimate(input.estimatedMinutes)) {
+      return { ok: false, message: "想定必要時間は1分〜1万時間の範囲で入力してください" };
+    }
+    const d = data();
+    const now = nowIso();
+    const existing = input.id ? d.goals.find((g) => g.id === input.id) : undefined;
+    const goal: Goal = {
+      id: existing?.id ?? newId(),
+      title,
+      description: input.description.trim(),
+      successCriteria: input.successCriteria.trim(),
+      deadline: input.deadline,
+      priority: input.priority,
+      estimatedMinutes: input.estimatedMinutes,
+      category: input.category.trim(),
+      status: input.status,
+      achievedAt: existing?.achievedAt ?? null,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+    commit({ ...d, goals: existing ? d.goals.map((g) => (g.id === goal.id ? goal : g)) : [...d.goals, goal] });
+    return { ok: true, id: goal.id };
+  },
+
+  setGoalStatus(id: string, status: GoalStatus) {
+    updateGoal(id, { status });
+  },
+
+  /** 達成の記録（作業時間の実績や工程の状態とは独立） */
+  setGoalAchieved(id: string, achieved: boolean) {
+    updateGoal(id, { achievedAt: achieved ? nowIso() : null });
+  },
+
+  /**
+   * 目標を削除する。工程と実績は一緒に削除し、作ったタスクは残して紐づけだけ外す。
+   * 戻り値は「元に戻す」用の削除前のデータ。
+   */
+  deleteGoal(id: string): AppData {
+    const d = data();
+    commit({
+      ...d,
+      goals: d.goals.filter((g) => g.id !== id),
+      goalSteps: d.goalSteps.filter((s) => s.goalId !== id),
+      workLogs: d.workLogs.filter((l) => l.goalId !== id),
+      tasks: d.tasks.map((t) => (t.goalId === id ? { ...t, goalId: null, stepId: null, updatedAt: nowIso() } : t)),
+    });
+    return d;
+  },
+
+  /* ---------- 工程 ---------- */
+
+  saveStep(input: StepInput & { id?: string; goalId: string }): ActionResult & { id?: string } {
+    const d = data();
+    if (!d.goals.some((g) => g.id === input.goalId)) return { ok: false, message: "目標が見つかりません" };
+    const title = input.title.trim();
+    if (!title) return { ok: false, message: "工程名を入力してください" };
+    if (input.estimatedMinutes !== null && !validEstimate(input.estimatedMinutes)) {
+      return { ok: false, message: "必要時間は1分〜1万時間の範囲で入力してください" };
+    }
+    const existing = input.id ? d.goalSteps.find((s) => s.id === input.id) : undefined;
+    const id = existing?.id ?? newId();
+    const siblings = d.goalSteps.filter((s) => s.goalId === input.goalId);
+    const deps = [...new Set(input.dependsOn)].filter((dep) => dep !== id);
+    if (deps.some((dep) => !siblings.some((s) => s.id === dep))) return { ok: false, message: "前提の工程は同じ目標の工程から選んでください" };
+    if (wouldCreateCycle(siblings, id, deps)) return { ok: false, message: "前提の関係が循環するため保存できません" };
+    const now = nowIso();
+    const step: GoalStep = {
+      id,
+      goalId: input.goalId,
+      title,
+      note: input.note.trim(),
+      estimatedMinutes: input.estimatedMinutes,
+      status: input.status,
+      order: existing?.order ?? Math.max(0, ...siblings.map((s) => s.order + 1)),
+      dependsOn: deps,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+    commit({
+      ...d,
+      goalSteps: existing ? d.goalSteps.map((s) => (s.id === id ? step : s)) : [...d.goalSteps, step],
+    });
+    return { ok: true, id };
+  },
+
+  setStepStatus(id: string, status: StepStatus) {
+    const d = data();
+    commit({ ...d, goalSteps: d.goalSteps.map((s) => (s.id === id ? { ...s, status, updatedAt: nowIso() } : s)) });
+  },
+
+  /** 作業順序を 1 つ前／後ろへ */
+  moveStep(id: string, dir: -1 | 1) {
+    const d = data();
+    const step = d.goalSteps.find((s) => s.id === id);
+    if (!step) return;
+    const ordered = d.goalSteps
+      .filter((s) => s.goalId === step.goalId)
+      .sort((a, b) => a.order - b.order || a.createdAt.localeCompare(b.createdAt));
+    const i = ordered.findIndex((s) => s.id === id);
+    const j = i + dir;
+    if (j < 0 || j >= ordered.length) return;
+    [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
+    const orderOf = new Map(ordered.map((s, k) => [s.id, k]));
+    commit({
+      ...d,
+      goalSteps: d.goalSteps.map((s) => (orderOf.has(s.id) ? { ...s, order: orderOf.get(s.id)! } : s)),
+    });
+  },
+
+  /** 工程を削除する。他の工程の前提からも外し、タスクは残して工程との紐づけだけ外す */
+  deleteStep(id: string) {
+    const d = data();
+    commit({
+      ...d,
+      goalSteps: d.goalSteps
+        .filter((s) => s.id !== id)
+        .map((s) => (s.dependsOn.includes(id) ? { ...s, dependsOn: s.dependsOn.filter((x) => x !== id) } : s)),
+      tasks: d.tasks.map((t) => (t.stepId === id ? { ...t, stepId: null, updatedAt: nowIso() } : t)),
+      workLogs: d.workLogs.map((l) => (l.stepId === id ? { ...l, stepId: null } : l)),
+    });
+  },
+
+  /** 工程から通常のタスク（未配置）を作る。目標・工程との対応を保持する */
+  createTaskFromStep(stepId: string, opts: { durationMin?: number; color?: string } = {}): ActionResult & { taskId?: string } {
+    const d = data();
+    const step = d.goalSteps.find((s) => s.id === stepId);
+    if (!step) return { ok: false, message: "工程が見つかりません" };
+    const durationMin = opts.durationMin ?? Math.min(step.estimatedMinutes ?? 30, 240);
+    if (!validDuration(durationMin)) return { ok: false, message: "所要時間は1〜1440分で入力してください" };
+    const now = nowIso();
+    const task: Task = {
+      id: newId(),
+      title: step.title,
+      durationMin,
+      color: opts.color ?? "violet",
+      done: false,
+      date: null,
+      startMin: null,
+      goalId: step.goalId,
+      stepId: step.id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    commit({
+      ...d,
+      tasks: [...d.tasks, task],
+      // 未着手の工程からタスクを作ったら「進行中」にする
+      goalSteps: d.goalSteps.map((s) => (s.id === stepId && s.status === "todo" ? { ...s, status: "doing", updatedAt: now } : s)),
+    });
+    return { ok: true, taskId: task.id };
+  },
+
+  /* ---------- 実績 ---------- */
+
+  addWorkLog(input: { goalId: string; stepId: string | null; date: DateKey; minutes: number; note: string }): ActionResult {
+    const d = data();
+    if (!d.goals.some((g) => g.id === input.goalId)) return { ok: false, message: "目標が見つかりません" };
+    if (!isDateKey(input.date)) return { ok: false, message: "日付が正しくありません" };
+    if (!validDuration(input.minutes)) return { ok: false, message: "作業時間は1〜1440分で入力してください" };
+    const log: WorkLog = {
+      id: newId(),
+      goalId: input.goalId,
+      stepId: input.stepId,
+      taskId: null,
+      date: input.date,
+      minutes: input.minutes,
+      note: input.note.trim(),
+      createdAt: nowIso(),
+    };
+    commit({ ...d, workLogs: [...d.workLogs, log] });
+    return { ok: true };
+  },
+
+  deleteWorkLog(id: string) {
+    const d = data();
+    commit({ ...d, workLogs: d.workLogs.filter((l) => l.id !== id) });
+  },
+
+  /* ---------- バックアップ ---------- */
+
+  /**
+   * 保存データ全体を置き換える（バックアップからの復元・元に戻す専用）。
+   * 置き換える前の状態は必ずスナップショットとして残す。
+   */
+  replaceAll(next: AppData, reason: string): ActionResult {
+    const current = data();
+    const snap = saveSnapshot(current, reason);
+    if (!snap.ok) return snap;
+    commit(next);
+    return { ok: true };
   },
 
   updateSettings(patch: Partial<Settings>) {

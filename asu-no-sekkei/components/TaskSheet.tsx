@@ -29,6 +29,8 @@ export function TaskSheet({
   onTapTask,
   onEditTask,
   onToggleDone,
+  onAdd,
+  goalTitles,
 }: {
   sheetRef: RefObject<HTMLElement | null>;
   tasks: Task[];
@@ -40,6 +42,10 @@ export function TaskSheet({
   onTapTask: (id: string) => void;
   onEditTask: (id: string) => void;
   onToggleDone: (id: string) => void;
+  /** タスクの追加（シート上端の「＋」） */
+  onAdd: () => void;
+  /** 目標 ID → 目標名（目標から作ったタスクに表示する） */
+  goalTitles: Map<string, string>;
 }) {
   const remaining = tasks.filter((t) => !t.done);
   const total = remaining.reduce((s, t) => s + t.durationMin, 0);
@@ -102,25 +108,38 @@ export function TaskSheet({
       >
         <span className="mx-auto mt-2 h-1 w-10 rounded-full bg-neutral-300" aria-hidden />
         {topBar ?? (
-          <button
-            type="button"
-            data-sheet-toggle
-            aria-expanded={mode === "open"}
-            className="flex flex-1 items-center justify-between px-5"
-            onClick={(e) => e.preventDefault()}
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") onModeChange(mode === "open" ? "peek" : "open");
-            }}
-          >
-            <span className="text-[15px] font-semibold text-neutral-900">
-              未配置タスク <span className="ml-1 font-normal text-neutral-500">{remaining.length}件</span>
-            </span>
-            <span className="text-xs tabular-nums text-neutral-500">
-              {total > 0 && formatDuration(total)}
-              <span className="ml-2">{mode === "open" ? "下げる" : "引き上げる"}</span>
-            </span>
-          </button>
+          <div className="flex flex-1 items-center">
+            <button
+              type="button"
+              data-sheet-toggle
+              aria-expanded={mode === "open"}
+              aria-label={`タスク一覧（未配置${remaining.length}件）${mode === "open" ? "を下げる" : "を引き上げる"}`}
+              className="flex h-full flex-1 items-center justify-between pl-5 pr-2"
+              onClick={(e) => e.preventDefault()}
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") onModeChange(mode === "open" ? "peek" : "open");
+              }}
+            >
+              <span className="text-[15px] font-semibold text-neutral-900">
+                未配置タスク <span className="ml-1 font-normal text-neutral-500">{remaining.length}件</span>
+              </span>
+              <span className="text-xs tabular-nums text-neutral-500">
+                {total > 0 && formatDuration(total)}
+                <span className="ml-2">{mode === "open" ? "下げる" : "引き上げる"}</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={onAdd}
+              aria-label="タスクを追加"
+              className="mr-3 grid size-11 shrink-0 place-items-center rounded-full bg-neutral-900 text-white shadow-md shadow-neutral-900/20 active:scale-95"
+            >
+              <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden>
+                <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
         )}
       </div>
 
@@ -129,7 +148,7 @@ export function TaskSheet({
           <p className="mt-2 rounded-2xl border border-dashed border-neutral-200 px-4 py-8 text-center text-sm leading-relaxed text-neutral-500">
             未配置のタスクはありません。
             <br />
-            下の「＋」から追加できます。
+            右上の「＋」から追加できます。
           </p>
         ) : (
           <>
@@ -139,6 +158,7 @@ export function TaskSheet({
                 <UnplacedCard
                   key={t.id}
                   task={t}
+                  goalTitle={t.goalId ? goalTitles.get(t.goalId) : undefined}
                   onTap={() => onTapTask(t.id)}
                   onEdit={() => onEditTask(t.id)}
                   onToggleDone={() => onToggleDone(t.id)}
@@ -152,7 +172,19 @@ export function TaskSheet({
   );
 }
 
-function UnplacedCard({ task, onTap, onEdit, onToggleDone }: { task: Task; onTap: () => void; onEdit: () => void; onToggleDone: () => void }) {
+function UnplacedCard({
+  task,
+  goalTitle,
+  onTap,
+  onEdit,
+  onToggleDone,
+}: {
+  task: Task;
+  goalTitle?: string;
+  onTap: () => void;
+  onEdit: () => void;
+  onToggleDone: () => void;
+}) {
   const { ref, handleRef, isDragSource, isDragging } = useDraggable<DragData>({
     id: `unplaced:${task.id}`,
     data: { taskId: task.id, kind: "unplaced" },
@@ -209,7 +241,10 @@ function UnplacedCard({ task, onTap, onEdit, onToggleDone }: { task: Task; onTap
         <span className={`truncate text-[15px] font-medium ${task.done ? "text-neutral-400 line-through" : "text-neutral-900"}`}>
           {task.title}
         </span>
-        <span className="text-xs tabular-nums text-neutral-500">{formatDuration(task.durationMin)}</span>
+        <span className="truncate text-xs tabular-nums text-neutral-500">
+          {formatDuration(task.durationMin)}
+          {goalTitle && <span className="ml-1.5" data-testid="task-goal">◎ {goalTitle}</span>}
+        </span>
       </div>
       <button
         type="button"
