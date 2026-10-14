@@ -94,6 +94,54 @@ function validDuration(min: number): boolean {
   return Number.isInteger(min) && min >= 1 && min <= DAY_MINUTES;
 }
 
+export type FixedEventInput = Omit<FixedEvent, "id" | "createdAt" | "updatedAt" | "skipDates" | "validFrom" | "validTo"> & {
+  id?: string;
+  validFrom?: DateKey | null;
+  validTo?: DateKey | null;
+};
+
+/** 固定予定の入力を検証して保存用の形にする（設定画面・タスクからの変換で共通） */
+function buildFixedEvent(
+  input: FixedEventInput,
+  existing: FixedEvent | undefined,
+): { ok: true; event: FixedEvent } | { ok: false; message: string } {
+  const title = input.title.trim();
+  if (!title) return { ok: false, message: "予定名を入力してください" };
+  if (input.weekdays.length === 0) return { ok: false, message: "曜日を1つ以上選んでください" };
+  if (
+    !Number.isInteger(input.startMin) ||
+    !Number.isInteger(input.endMin) ||
+    input.startMin < 0 ||
+    input.endMin > DAY_MINUTES ||
+    input.endMin <= input.startMin
+  ) {
+    return { ok: false, message: "終了時刻は開始時刻より後にしてください（0:00〜24:00）" };
+  }
+  const validFrom = input.validFrom ?? null;
+  const validTo = input.validTo ?? null;
+  if (validFrom && validTo && validFrom > validTo) {
+    return { ok: false, message: "終了日は開始日以降にしてください" };
+  }
+  const now = nowIso();
+  return {
+    ok: true,
+    event: {
+      id: existing?.id ?? newId(),
+      title,
+      weekdays: [...new Set(input.weekdays)].sort((a, b) => a - b),
+      startMin: input.startMin,
+      endMin: input.endMin,
+      color: input.color,
+      validFrom,
+      validTo,
+      // 「この日だけ休み」は毎週の設定を編集しても残す
+      skipDates: existing?.skipDates ?? [],
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    },
+  };
+}
+
 export const actions = {
   /** テスト用：保存先を差し替える */
   _setRepository(repo: Repository | null) {
@@ -171,47 +219,69 @@ export const actions = {
     commit({ ...d, tasks: d.tasks.filter((t) => t.id !== id) });
   },
 
-  saveFixedEvent(
-    input: Omit<FixedEvent, "id" | "createdAt" | "updatedAt" | "skipDates" | "validFrom" | "validTo"> & {
-      id?: string;
-      validFrom?: DateKey | null;
-      validTo?: DateKey | null;
-    },
-  ): ActionResult {
-    const title = input.title.trim();
-    if (!title) return { ok: false, message: "予定名を入力してください" };
-    if (input.weekdays.length === 0) return { ok: false, message: "曜日を1つ以上選んでください" };
-    if (input.startMin < 0 || input.endMin > DAY_MINUTES || input.endMin <= input.startMin) {
-      return { ok: false, message: "終了時刻は開始時刻より後にしてください（0:00〜24:00）" };
-    }
-    const validFrom = input.validFrom ?? null;
-    const validTo = input.validTo ?? null;
-    if (validFrom && validTo && validFrom > validTo) {
-      return { ok: false, message: "適用終了日は適用開始日以降にしてください" };
-    }
+  saveFixedEvent(input: FixedEventInput): ActionResult {
     const d = data();
-    const now = nowIso();
-    const weekdays = [...new Set(input.weekdays)].sort();
     const existing = input.id ? d.fixedEvents.find((e) => e.id === input.id) : undefined;
-    const event: FixedEvent = {
-      id: existing?.id ?? newId(),
-      title,
-      weekdays,
-      startMin: input.startMin,
-      endMin: input.endMin,
-      color: input.color,
-      validFrom,
-      validTo,
-      // 「この日だけ休み」は毎週の設定を編集しても残す
-      skipDates: existing?.skipDates ?? [],
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-    };
+    const built = buildFixedEvent(input, existing);
+    if (!built.ok) return built;
     const fixedEvents = existing
-      ? d.fixedEvents.map((e) => (e.id === event.id ? event : e))
-      : [...d.fixedEvents, event];
+      ? d.fixedEvents.map((e) => (e.id === built.event.id ? built.event : e))
+      : [...d.fixedEvents, built.event];
     commit({ ...d, fixedEvents });
     return { ok: true };
+  },
+
+  /**
+   * 通常のタスクを毎週の固定予定に変える。
+   * 固定予定（曜日の規則）を 1 件作り、元のタスクは同じ保存処理の中で削除するので、二重に残らない。
+   * 日付ごとの複製は作らない。重なる既存タスクがあっても削除・移動はしない（画面側で警告する）。
+   */
+  convertTaskToWeekly(taskId: string, input: Omit<FixedEventInput, "id">): ActionResult & { eventId?: string; task?: Task } {
+    const d = data();
+    const task = d.tasks.find((t) => t.id === taskId);
+    if (!task) return { ok: false, message: "タスクが見つかりません" };
+    if (!input.validFrom) return { ok: false, message: "繰り返し開始日を入力してください" };
+    const built = buildFixedEvent(input, undefined);
+    if (!built.ok) return built;
+    commit({ ...d, tasks: d.tasks.filter((t) => t.id !== taskId), fixedEvents: [...d.fixedEvents, built.event] });
+    return { ok: true, eventId: built.event.id, task };
+  },
+
+  /** convertTaskToWeekly の取り消し（固定予定を消し、元のタスクを戻す） */
+  undoConvertTask(eventId: string, task: Task) {
+    const d = data();
+    commit({
+      ...d,
+      fixedEvents: d.fixedEvents.filter((e) => e.id !== eventId),
+      tasks: d.tasks.some((t) => t.id === task.id) ? d.tasks : [...d.tasks, task],
+    });
+  },
+
+  /**
+   * 毎週の繰り返しを lastDate（この日を含む）までで終了する。
+   * 過去の表示は残り、予定データは削除しない。
+   */
+  endFixedEventRepeat(id: string, lastDate: DateKey): ActionResult & { previousValidTo?: DateKey | null } {
+    const d = data();
+    const e = d.fixedEvents.find((x) => x.id === id);
+    if (!e) return { ok: false, message: "固定予定が見つかりません" };
+    if (e.validFrom && lastDate < e.validFrom) {
+      return { ok: false, message: "繰り返し開始日より前には終了できません。不要なら設定画面で削除してください" };
+    }
+    commit({
+      ...d,
+      fixedEvents: d.fixedEvents.map((x) => (x.id === id ? { ...x, validTo: lastDate, updatedAt: nowIso() } : x)),
+    });
+    return { ok: true, previousValidTo: e.validTo };
+  },
+
+  /** 適用終了日を戻す（繰り返し終了の取り消し用） */
+  setFixedEventValidTo(id: string, validTo: DateKey | null) {
+    const d = data();
+    commit({
+      ...d,
+      fixedEvents: d.fixedEvents.map((x) => (x.id === id ? { ...x, validTo, updatedAt: nowIso() } : x)),
+    });
   },
 
   /** この日だけ休みにする（繰り返し設定そのものは変えない） */

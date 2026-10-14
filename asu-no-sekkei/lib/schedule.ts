@@ -109,3 +109,49 @@ export function conflictingTaskIds(tasks: Task[], events: FixedEvent[], date: Da
   }
   return result;
 }
+
+/** 毎週の規則の形（保存前の入力にも使えるよう、FixedEvent の一部だけを受け取る） */
+export type WeeklyRule = Pick<FixedEvent, "weekdays" | "startMin" | "endMin" | "validFrom" | "validTo"> & {
+  skipDates?: DateKey[];
+};
+
+export interface RuleConflicts {
+  /** 規則の対象日に配置済みで、時間が重なるタスク（日付順） */
+  tasks: (Task & { startMin: number; date: DateKey })[];
+  /** 曜日・期間・時間が重なる他の固定予定 */
+  fixed: FixedEvent[];
+}
+
+/**
+ * 毎週の規則を保存したときに重なる既存の予定を調べる。
+ * 重なっても予定を削除・移動することはせず、画面で警告するためだけに使う。
+ */
+export function ruleConflicts(
+  rule: WeeklyRule,
+  tasks: Task[],
+  events: FixedEvent[],
+  opts: { excludeEventId?: string; excludeTaskId?: string } = {},
+): RuleConflicts {
+  const asEvent = { ...rule, skipDates: rule.skipDates ?? [] } as FixedEvent;
+  const conflictTasks = tasks
+    .filter(
+      (t): t is Task & { startMin: number; date: DateKey } =>
+        t.id !== opts.excludeTaskId &&
+        t.date !== null &&
+        t.startMin !== null &&
+        fixedEventAppliesTo(asEvent, t.date) &&
+        !asEvent.skipDates.includes(t.date) &&
+        overlaps(rule.startMin, rule.endMin, t.startMin, t.startMin + t.durationMin),
+    )
+    .sort((a, b) => (a.date === b.date ? a.startMin - b.startMin : a.date < b.date ? -1 : 1));
+  const rangesOverlap = (e: FixedEvent) =>
+    (!rule.validTo || !e.validFrom || e.validFrom <= rule.validTo) && (!e.validTo || !rule.validFrom || rule.validFrom <= e.validTo);
+  const conflictFixed = events.filter(
+    (e) =>
+      e.id !== opts.excludeEventId &&
+      e.weekdays.some((w) => rule.weekdays.includes(w)) &&
+      overlaps(rule.startMin, rule.endMin, e.startMin, e.endMin) &&
+      rangesOverlap(e),
+  );
+  return { tasks: conflictTasks, fixed: conflictFixed };
+}
