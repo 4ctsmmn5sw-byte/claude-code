@@ -84,7 +84,8 @@ describe("store actions", () => {
         settings: { snapMinutes: 5 },
       }),
     );
-    expect(r.data.schemaVersion).toBe(2);
+    expect(r.data.schemaVersion).toBe(3);
+    expect(r.data.goals).toEqual([]);
     expect(r.data.fixedEvents[0]).toMatchObject({ validFrom: null, validTo: null, skipDates: [] });
     expect(r.data.settings.pxPerMinute).toBe(1.5);
     expect(r.warning).toBeNull();

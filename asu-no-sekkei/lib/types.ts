@@ -23,6 +23,10 @@ export interface Task {
   date: DateKey | null;
   /** 開始時刻（分）。未配置なら null */
   startMin: number | null;
+  /** このタスクを作った目標（目標と関係ないタスクは未設定） */
+  goalId?: string | null;
+  /** このタスクを作った工程 */
+  stepId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -61,12 +65,75 @@ export interface Settings {
   pxPerMinute: number;
 }
 
-/** 保存単位。schemaVersion で将来の移行に備える（v1 → v2 は読み込み時に自動変換） */
+/** やりたいこと（まだ取り組んでいない）／取り組み中／一時停止／やめた */
+export type GoalStatus = "wish" | "active" | "paused" | "dropped";
+export type GoalPriority = "high" | "medium" | "low";
+
+/**
+ * 目標。進捗状態（status）と「達成したかどうか」（achievedAt）は別に持つ。
+ * 作業時間の実績は WorkLog に記録し、達成とは連動させない。
+ */
+export interface Goal {
+  id: string;
+  title: string;
+  description: string;
+  /** 達成条件（何をもって達成とするか） */
+  successCriteria: string;
+  deadline: DateKey | null;
+  priority: GoalPriority;
+  /** 想定必要時間（分）。未設定なら工程の合計を目安にする */
+  estimatedMinutes: number | null;
+  category: string;
+  status: GoalStatus;
+  /** 達成した日時。未達成なら null */
+  achievedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type StepStatus = "todo" | "doing" | "done" | "skipped";
+
+/** 目標の作業工程。目標とは goalId で結ぶ（入れ子にせず平らに保存する） */
+export interface GoalStep {
+  id: string;
+  goalId: string;
+  title: string;
+  note: string;
+  estimatedMinutes: number | null;
+  status: StepStatus;
+  /** 目標内での作業順序（小さいほど先） */
+  order: number;
+  /** 先に終わらせる必要がある工程の ID（同じ目標内） */
+  dependsOn: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 作業時間の実績。タスクの完了時に自動で記録するほか、手入力もできる */
+export interface WorkLog {
+  id: string;
+  goalId: string;
+  stepId: string | null;
+  /** 完了したタスクから記録した場合のタスク ID */
+  taskId: string | null;
+  date: DateKey;
+  minutes: number;
+  note: string;
+  createdAt: string;
+}
+
+/**
+ * 保存単位。schemaVersion で将来の移行に備える。
+ * v1 → v2 → v3 は読み込み時に自動変換（v3 で目標・工程・実績を追加。既存の項目は変更なし）。
+ */
 export interface AppData {
-  schemaVersion: 2;
+  schemaVersion: 3;
   tasks: Task[];
   fixedEvents: FixedEvent[];
   settings: Settings;
+  goals: Goal[];
+  goalSteps: GoalStep[];
+  workLogs: WorkLog[];
 }
 
 /** タイムライン上に並ぶ 1 区間（タスク・固定予定の共通形） */

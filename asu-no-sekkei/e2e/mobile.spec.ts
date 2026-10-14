@@ -61,7 +61,7 @@ test.describe("縦型時間割のレイアウト", () => {
   test("主要な操作は 44px 以上（小さい予定も当たり判定を確保）", async ({ page }) => {
     await freshStart(page, SAMPLE);
     await scrollTimelineTo(page, 12 * 60 + 20);
-    const targets = page.locator("header button, header a, nav button, [data-testid=task-sheet] button, [data-testid=timeline-body] [role=button], [data-testid=fixed-event] button");
+    const targets = page.locator("header button, header a, nav a, [data-testid=task-sheet] button, [data-testid=timeline-body] [role=button], [data-testid=fixed-event] button");
     const n = await targets.count();
     expect(n).toBeGreaterThan(8);
     for (let i = 0; i < n; i++) {
@@ -147,7 +147,7 @@ test.describe("タッチでのドラッグ＆ドロップ", () => {
     expect((await storedTasks(page)).find((t: { id: string }) => t.id === "t4").startMin).toBeNull();
 
     // 配置済みタスクを他のタスクに重ねても動かない
-    await page.getByRole("button", { name: /^予定/ }).click();
+    await page.getByRole("button", { name: /^タスク一覧/ }).click(); // シートを下げる
     await scrollTimelineTo(page, 12 * 60 + 30);
     const r = (await block(page, "レポートの構成を考える").boundingBox())!;
     const grab = { x: r.x + 150, y: r.y + 20 };
@@ -237,6 +237,8 @@ test.describe("タップで配置（代替操作）", () => {
     await expect(page.getByTestId("placing-bar")).toHaveCount(0);
 
     // 固定予定の上をタップ → 赤く表示・配置しない・選択は続く
+    // （配置したタスクが選択中なので、選択を閉じてから一覧を開く）
+    await page.getByTestId("selected-bar").getByRole("button", { name: "閉じる" }).tap();
     await openTasks(page);
     await card(page, "買い物").tap();
     await scrollTimelineTo(page, 10 * 60);
