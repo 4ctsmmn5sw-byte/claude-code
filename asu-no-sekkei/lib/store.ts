@@ -5,6 +5,7 @@ import { saveSnapshot } from "./backup";
 import { isDateKey, todayKey } from "./date";
 import { wouldCreateCycle } from "./goals";
 import { checkPlacement } from "./schedule";
+import { DEFAULT_SESSION_MINUTES, stepProgress, type StepProgress } from "./sessions";
 import { findFreeSlot, type SlotOptions } from "./slots";
 import { DAY_MINUTES } from "./time";
 import { emptyData, LocalStorageRepository, MAX_ESTIMATE_MINUTES, STORAGE_KEY, type Repository } from "./storage";
@@ -133,6 +134,15 @@ export interface StepInput {
   status: StepStatus;
   dependsOn: string[];
   priority?: GoalPriority | null;
+  /** 1 回の作業時間（分）。undefined なら変更しない */
+  sessionMinutes?: number | null;
+}
+
+/** 工程から作るタスク 1 回分（date・startMin が null なら未配置） */
+export interface StepTaskItem {
+  durationMin: number;
+  date: DateKey | null;
+  startMin: number | null;
 }
 
 /** AI の提案を編集・承認した工程（key は提案内の識別子） */
@@ -270,10 +280,15 @@ export const actions = {
    * 完了状態を切り替える。目標に紐づくタスクを完了にしたときは作業時間の実績（WorkLog）を記録し、
    * 未完了に戻したときはそのタスクから記録した実績を取り消す。工程の状態は自動では変えない。
    */
-  toggleDone(id: string): { done: boolean; step: GoalStep | null } {
+  /**
+   * 完了の切り替え。目標のタスクを完了にすると、その予定時間を実績として 1 件だけ記録する
+   * （taskId で結ぶので、完了・未完了を繰り返しても二重に記録しない。未完了に戻すと消える）。
+   * 工程は自動では完了にしない。
+   */
+  toggleDone(id: string): { done: boolean; step: GoalStep | null; progress: StepProgress | null } {
     const d = data();
     const task = d.tasks.find((t) => t.id === id);
-    if (!task) return { done: false, step: null };
+    if (!task) return { done: false, step: null, progress: null };
     const done = !task.done;
     const now = nowIso();
     const tasks = d.tasks.map((t) => (t.id === id ? { ...t, done, updatedAt: now } : t));
@@ -296,7 +311,7 @@ export const actions = {
     }
     commit({ ...d, tasks, workLogs });
     const step = task.stepId ? (d.goalSteps.find((s) => s.id === task.stepId) ?? null) : null;
-    return { done, step };
+    return { done, step, progress: step ? stepProgress(step, tasks, workLogs) : null };
   },
 
   deleteTask(id: string) {
@@ -463,6 +478,9 @@ export const actions = {
     if (input.estimatedMinutes !== null && !validEstimate(input.estimatedMinutes)) {
       return { ok: false, message: "必要時間は1分〜1万時間の範囲で入力してください" };
     }
+    if (input.sessionMinutes != null && (!validDuration(input.sessionMinutes) || input.sessionMinutes < 5)) {
+      return { ok: false, message: "1回の作業時間は5〜1440分で入力してください" };
+    }
     const existing = input.id ? d.goalSteps.find((s) => s.id === input.id) : undefined;
     const id = existing?.id ?? newId();
     const siblings = d.goalSteps.filter((s) => s.goalId === input.goalId);
@@ -482,6 +500,7 @@ export const actions = {
       priority: input.priority !== undefined ? input.priority : (existing?.priority ?? null),
       // 必要時間を変えたら AI の推定値ではなくなる
       aiEstimated: existing?.aiEstimated === true && existing.estimatedMinutes === input.estimatedMinutes,
+      sessionMinutes: input.sessionMinutes !== undefined ? input.sessionMinutes : (existing?.sessionMinutes ?? null),
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };
@@ -598,7 +617,10 @@ export const actions = {
     const d = data();
     const step = d.goalSteps.find((s) => s.id === stepId);
     if (!step) return { ok: false, message: "工程が見つかりません" };
-    const durationMin = opts.durationMin ?? Math.min(step.estimatedMinutes ?? 30, 240);
+    // 工程全体の必要時間ではなく、1 回の作業時間を使う（残りが短ければ残りの時間まで）
+    const session = step.sessionMinutes ?? DEFAULT_SESSION_MINUTES;
+    const left = stepProgress(step, d.tasks, d.workLogs).unplannedMinutes;
+    const durationMin = opts.durationMin ?? (left !== null && left > 0 ? Math.min(session, left) : session);
     if (!validDuration(durationMin)) return { ok: false, message: "所要時間は1〜1440分で入力してください" };
     const now = nowIso();
     const task: Task = {
@@ -637,7 +659,72 @@ export const actions = {
     return { ok: true, taskId: created.taskId, startMin: placed.ok ? start : null };
   },
 
+  /**
+   * 工程から 1 回分ずつのタスクをまとめて作る（ユーザーが承認したときだけ呼ぶ）。
+   * - タスクには選んだ 1 回分の時間だけを設定する。工程の総必要時間（estimatedMinutes）は変えない
+   * - 配置する回は、固定予定・既存のタスク・同時に作る回と重ならないことを確認し、1 つでも重なれば何も保存しない
+   * - 選んだ 1 回の作業時間を工程に覚えておく（次回の初期値）
+   */
+  createStepTasks(stepId: string, items: StepTaskItem[], opts: { sessionMinutes?: number; color?: string } = {}): ActionResult & { taskIds?: string[] } {
+    const d = data();
+    const step = d.goalSteps.find((s) => s.id === stepId);
+    if (!step) return { ok: false, message: "工程が見つかりません" };
+    if (items.length === 0) return { ok: false, message: "作成するタスクがありません" };
+    if (items.length > 60) return { ok: false, message: "一度に作れるのは60回分までです" };
+    const now = nowIso();
+    const created: Task[] = [];
+    for (const it of items) {
+      if (!validDuration(it.durationMin)) return { ok: false, message: "1回の作業時間は1〜1440分で入力してください" };
+      const placed = it.date !== null && it.startMin !== null;
+      const task: Task = {
+        id: newId(),
+        title: step.title,
+        durationMin: it.durationMin,
+        color: opts.color ?? "violet",
+        done: false,
+        date: placed ? it.date : null,
+        startMin: placed ? it.startMin : null,
+        goalId: step.goalId,
+        stepId: step.id,
+        createdAt: now,
+        updatedAt: now,
+      };
+      if (placed) {
+        if (!isDateKey(task.date)) return { ok: false, message: "日付が正しくありません" };
+        const check = checkPlacement([...d.tasks, ...created], d.fixedEvents, task.date!, task.id, task.startMin!, task.startMin! + task.durationMin);
+        if (!check.ok) return { ok: false, message: `${task.date} の候補：${check.message}` };
+      }
+      created.push(task);
+    }
+    const session = opts.sessionMinutes;
+    commit({
+      ...d,
+      tasks: [...d.tasks, ...created],
+      goalSteps: d.goalSteps.map((s) =>
+        s.id === stepId
+          ? {
+              ...s,
+              status: s.status === "todo" ? "doing" : s.status,
+              sessionMinutes: session !== undefined && validDuration(session) ? session : (s.sessionMinutes ?? null),
+              updatedAt: now,
+            }
+          : s,
+      ),
+    });
+    return { ok: true, taskIds: created.map((t) => t.id) };
+  },
+
   /* ---------- 実績 ---------- */
+
+  /** 実績の修正（実際に取り組んだ時間など）。タスクから記録した実績も修正できる（件数は増えない） */
+  updateWorkLog(id: string, patch: { minutes: number; date: DateKey; note: string }): ActionResult {
+    const d = data();
+    if (!d.workLogs.some((l) => l.id === id)) return { ok: false, message: "記録が見つかりません" };
+    if (!isDateKey(patch.date)) return { ok: false, message: "日付が正しくありません" };
+    if (!validDuration(patch.minutes)) return { ok: false, message: "作業時間は1〜1440分で入力してください" };
+    commit({ ...d, workLogs: d.workLogs.map((l) => (l.id === id ? { ...l, minutes: patch.minutes, date: patch.date, note: patch.note.trim() } : l)) });
+    return { ok: true };
+  },
 
   addWorkLog(input: { goalId: string; stepId: string | null; date: DateKey; minutes: number; note: string }): ActionResult {
     const d = data();

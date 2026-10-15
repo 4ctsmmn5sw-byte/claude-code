@@ -5,13 +5,12 @@ import { useState } from "react";
 import { useActionGuard } from "@/hooks/useActionGuard";
 import { addDays, formatDateLabel } from "@/lib/date";
 import { stepsOf, unfinishedDependencies } from "@/lib/goals";
+import { DEFAULT_SESSION_MINUTES, stepProgress } from "@/lib/sessions";
 import { DEFAULT_SLOT_OPTIONS } from "@/lib/slots";
 import { actions, useAppStore } from "@/lib/store";
 import { formatDuration, formatMinutes } from "@/lib/time";
 import type { DateKey, GoalStep } from "@/lib/types";
 
-/** 1 回のタスクの長さの初期値の上限（長い工程は分けて取り組む前提） */
-const DEFAULT_CHUNK = 60;
 
 /**
  * 保存した工程を明日の時間割に追加する。
@@ -29,8 +28,15 @@ export function TomorrowPicker({ goalId, today, onDone }: { goalId: string; toda
     steps.filter((s) => unfinishedDependencies(allSteps, s).length === 0).slice(0, 2).forEach((s) => (init[s.id] = true));
     return init;
   });
+  // 工程全体の必要時間ではなく、1 回の作業時間（未設定なら 60 分。未予定の残りが短ければ残りまで）
   const [minutes, setMinutes] = useState<Record<string, number>>(() =>
-    Object.fromEntries(steps.map((s) => [s.id, Math.min(s.estimatedMinutes ?? 30, DEFAULT_CHUNK)])),
+    Object.fromEntries(
+      steps.map((s) => {
+        const session = s.sessionMinutes ?? DEFAULT_SESSION_MINUTES;
+        const left = stepProgress(s, store?.data.tasks ?? [], store?.data.workLogs ?? []).unplannedMinutes;
+        return [s.id, left !== null && left > 0 ? Math.min(session, left) : session];
+      }),
+    ),
   );
   const [results, setResults] = useState<{ title: string; startMin: number | null; minutes: number }[] | null>(null);
   const [error, setError] = useState<string | null>(null);

@@ -2,9 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useActionGuard } from "@/hooks/useActionGuard";
 import type { ToastAction, ToastTone } from "@/hooks/useToast";
 import { requiredWeeklyMinutes } from "@/lib/ai/feasibility";
+import { stepProgress } from "@/lib/sessions";
 import { formatDateLabel } from "@/lib/date";
 import {
   deadlineLabel,
@@ -18,12 +18,13 @@ import {
 } from "@/lib/goals";
 import { actions } from "@/lib/store";
 import { formatDuration, formatMinutes } from "@/lib/time";
-import type { AppData, DateKey, Goal, GoalStep } from "@/lib/types";
+import type { AppData, DateKey, Goal, GoalStep, WorkLog } from "@/lib/types";
 import { Modal } from "../Modal";
 import { AiPlanSheet } from "./AiPlanSheet";
 import { TomorrowPicker } from "./TomorrowPicker";
 import { GoalForm } from "./GoalForm";
 import { StepForm } from "./StepForm";
+import { StepTaskSheet } from "./StepTaskSheet";
 import { WorkLogForm } from "./WorkLogForm";
 
 type Notify = (message: string, tone?: ToastTone, action?: ToastAction) => void;
@@ -60,21 +61,9 @@ export function GoalDetail({
   const dl = deadlineLabel(st.daysLeft);
   const actualRatio = st.estimatedMinutes ? Math.min(1, st.actualMinutes / st.estimatedMinutes) : 0;
 
-  // 連打で同じ工程のタスクが重複しないようにする（時間をおけば、別の日の練習用にもう一度作れる）
-  const guard = useActionGuard(1500);
-  const createTask = (step: GoalStep) =>
-    guard.run(`task:${step.id}`, () => {
-      const unplaced = tasksOfStep(data.tasks, step.id).filter((t) => !t.done && t.date === null);
-      if (
-        unplaced.length > 0 &&
-        !window.confirm(`「${step.title}」のまだ配置していないタスクが${unplaced.length}件あります。もう1つ作りますか？（別の日にも取り組む場合など）`)
-      ) {
-        return;
-      }
-      const r = actions.createTaskFromStep(step.id);
-      if (!r.ok) return notify(r.message, "error");
-      notify(`「${step.title}」を未配置タスクに追加しました`, "info", { label: "計画を開く", run: () => router.push("/") });
-    });
+  // 「タスクにして計画へ」：1 回の作業時間を選ぶ画面を開く
+  const [taskStep, setTaskStep] = useState<GoalStep | null>(null);
+  const [editingLog, setEditingLog] = useState<WorkLog | null>(null);
   const pace = goal.deadline && st.daysLeft !== null ? requiredWeeklyMinutes(st.remainingStepMinutes, st.daysLeft + 1) : null;
 
   return (
@@ -180,8 +169,7 @@ export function GoalDetail({
                   data={data}
                   blockers={unfinishedDependencies(data.goalSteps, s)}
                   onOpen={() => setStepForm(s)}
-                  onCreateTask={() => createTask(s)}
-                  creating={guard.isBusy(`task:${s.id}`)}
+                  onCreateTask={() => setTaskStep(s)}
                 />
               ))}
             </ol>
@@ -225,7 +213,14 @@ export function GoalDetail({
                   <span className="min-w-0 flex-1 truncate text-sm text-neutral-800">
                     {(l.stepId && stepTitle.get(l.stepId)) || l.note || (l.taskId ? "タスク" : "作業")}
                   </span>
-                  <span className="shrink-0 text-sm tabular-nums text-neutral-700">{formatDuration(l.minutes)}</span>
+                  <button
+                    type="button"
+                    onClick={() => setEditingLog(l)}
+                    className="h-11 shrink-0 rounded-lg px-1 text-sm tabular-nums text-neutral-700 underline decoration-neutral-300 underline-offset-2"
+                    aria-label={`${formatDateLabel(l.date)}の記録（${formatDuration(l.minutes)}）を修正`}
+                  >
+                    {formatDuration(l.minutes)}
+                  </button>
                   <button
                     type="button"
                     onClick={() => actions.deleteWorkLog(l.id)}
@@ -339,6 +334,19 @@ export function GoalDetail({
         />
       )}
       {logging && <WorkLogForm goalId={goal.id} steps={steps} today={today} onClose={() => setLogging(false)} />}
+      {editingLog && <WorkLogForm goalId={goal.id} steps={steps} today={today} initial={editingLog} onClose={() => setEditingLog(null)} />}
+      {taskStep && (
+        <StepTaskSheet
+          data={data}
+          step={data.goalSteps.find((x) => x.id === taskStep.id) ?? taskStep}
+          today={today}
+          onClose={() => setTaskStep(null)}
+          onCreated={(message) => {
+            setTaskStep(null);
+            notify(message, "info", { label: "計画を開く", run: () => router.push("/") });
+          }}
+        />
+      )}
     </>
   );
 }
@@ -351,7 +359,6 @@ function StepRow({
   blockers,
   onOpen,
   onCreateTask,
-  creating,
 }: {
   step: GoalStep;
   index: number;
@@ -360,11 +367,11 @@ function StepRow({
   blockers: GoalStep[];
   onOpen: () => void;
   onCreateTask: () => void;
-  creating: boolean;
 }) {
   const linked = tasksOfStep(data.tasks, step.id);
   const done = step.status === "done";
   const placed = linked.filter((t) => t.date && t.startMin !== null && !t.done);
+  const pr = stepProgress(step, data.tasks, data.workLogs);
   return (
     <li data-testid="step-row" data-step-status={step.status} className="rounded-2xl bg-white ring-1 ring-neutral-200/80">
       <div className="flex items-stretch">
@@ -395,6 +402,13 @@ function StepRow({
           {step.note && <span className="mt-0.5 block truncate text-xs text-neutral-500">{step.note}</span>}
           {blockers.length > 0 && !done && (
             <span className="mt-1 block text-xs text-amber-700">前提：{blockers.map((b) => `「${b.title}」`).join("")}が未完了</span>
+          )}
+          {(pr.actualMinutes > 0 || pr.plannedMinutes > 0) && step.estimatedMinutes !== null && (
+            <span className="mt-1 block text-xs tabular-nums text-neutral-600" data-testid="step-progress-line">
+              実績 {formatDuration(pr.actualMinutes)} / {formatDuration(step.estimatedMinutes)}・予定 {formatDuration(pr.plannedMinutes)}
+              {pr.unplannedMinutes !== null && `・未予定 ${formatDuration(pr.unplannedMinutes)}`}
+              {pr.overPlannedMinutes > 0 && <span className="text-amber-700">（予定が残りを{formatDuration(pr.overPlannedMinutes)}超過）</span>}
+            </span>
           )}
           {linked.length > 0 && (
             <span className="mt-1 block text-xs text-violet-700" data-testid="step-tasks">
@@ -429,11 +443,10 @@ function StepRow({
           <button
             type="button"
             onClick={onCreateTask}
-            disabled={creating}
-            className="h-11 w-full rounded-xl text-sm font-medium text-violet-700 active:bg-violet-50 disabled:text-neutral-400"
+            className="h-11 w-full rounded-xl text-sm font-medium text-violet-700 active:bg-violet-50"
             aria-label={`${step.title}をタスクにする`}
           >
-            {creating ? "追加しました" : "＋ タスクにして計画へ"}
+            ＋ タスクにして計画へ
           </button>
         </div>
       )}

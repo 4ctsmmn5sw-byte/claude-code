@@ -119,6 +119,7 @@ function sanitizeStep(raw: unknown): GoalStep | null {
     dependsOn: Array.isArray(raw.dependsOn) ? [...new Set(raw.dependsOn.filter((d): d is string => typeof d === "string"))] : [],
     priority: PRIORITIES.includes(raw.priority as GoalPriority) ? (raw.priority as GoalPriority) : null,
     aiEstimated: raw.aiEstimated === true,
+    sessionMinutes: optMinutes(raw.sessionMinutes, DAY_MINUTES),
     createdAt: str(raw.createdAt, now),
     updatedAt: str(raw.updatedAt, now),
   };

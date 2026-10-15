@@ -38,8 +38,8 @@ async function addStep(page: Page, title: string, hours: string, minutes: string
   await page.getByRole("button", { name: "＋ 工程を追加" }).tap();
   const f = page.getByTestId("step-form");
   await f.getByLabel("工程名").fill(title);
-  await f.getByLabel("必要時間（任意）（時間）").fill(hours);
-  await f.getByLabel("必要時間（任意）（分）").fill(minutes);
+  await f.getByLabel("総必要時間（任意）（時間）").fill(hours);
+  await f.getByLabel("総必要時間（任意）（分）").fill(minutes);
   for (const d of depends) await f.getByRole("button", { name: d }).tap();
   await f.getByRole("button", { name: "工程を追加" }).tap();
   await expect(f).toHaveCount(0);
@@ -70,16 +70,18 @@ test("既存データを保ったまま、目標→工程→タスク→計画�
   await expect(page.getByTestId("goal-detail")).toContainText("残りの工程の必要時間（目安）：2時間45分");
 
   // 工程からタスクを作る → 計画を開く
-  // 連打しても 1 件だけ作る
-  const toTask = rows.nth(0).getByRole("button", { name: "単語帳 Unit1をタスクにする" });
-  // 再描画の前に届く 2 回目のタップ（同じ瞬間の連続クリック）も無視する
-  await toTask.evaluate((el: HTMLElement) => {
+  // 「タスクにして計画へ」：1 回の作業時間を選ぶ画面（残り45分なので初期値は45分）
+  await rows.nth(0).getByRole("button", { name: "単語帳 Unit1をタスクにする" }).tap();
+  const sheet = page.getByTestId("step-task-sheet");
+  await page.waitForTimeout(350);
+  await expect(sheet.getByRole("radio", { name: "45分" })).toHaveAttribute("aria-checked", "true");
+  await expect(sheet.getByRole("radio", { name: "未配置で保存" })).toHaveAttribute("aria-checked", "true");
+  // 連打しても 1 件だけ作る（再描画の前に届く連続クリックも無視する）
+  await sheet.getByRole("button", { name: "タスクを作成（45分）" }).evaluate((el: HTMLElement) => {
     el.click();
     el.click();
     el.click();
   });
-  await expect(toTask).toHaveText("追加しました");
-  await expect(toTask).toBeDisabled();
   await expect(rows.nth(0)).toHaveAttribute("data-step-status", "doing");
   await expect(rows.nth(0).getByTestId("step-tasks")).toContainText("タスク 1件");
   await page.getByTestId("toast").getByRole("button", { name: "計画を開く" }).tap();
@@ -234,32 +236,110 @@ test("実行画面は今日の時間割、計画画面は明日から始まる",
   await expect(page.getByTestId("current-date")).toContainText("10月15日（木）");
 });
 
-test("同じ工程を別の日にも練習できる（時間をおけばもう一度タスクにでき、未配置が残っていれば確認する）", async ({ page }) => {
+test("5時間の工程を60分×5回に分けて複数日に配置し、完了した分だけ実績に反映する", async ({ page }) => {
+  await freshStart(page, V2);
+  await page.goto("/goals");
+  await addGoal(page, { title: "英文法" });
+  await addStep(page, "文法問題集", "5", "0");
+  const row = page.getByTestId("step-row").first();
+  await row.getByRole("button", { name: "文法問題集をタスクにする" }).tap();
+  const sheet = page.getByTestId("step-task-sheet");
+  await page.waitForTimeout(350);
+  await expect(sheet.getByTestId("step-progress")).toContainText("総必要時間5時間（推定）");
+  await expect(sheet.getByRole("radio", { name: "60分" })).toHaveAttribute("aria-checked", "true");
+
+  // まとめて分割：5時間 → 60分×5回、明日（10/15）から1日1回ずつ空き時間へ
+  await sheet.getByRole("radio", { name: "まとめて分割" }).tap();
+  await expect(sheet.getByTestId("split-panel")).toContainText("5時間 を 60分・60分・60分・60分・60分 に分け");
+  const cands = sheet.getByTestId("split-candidate");
+  await expect(cands).toHaveCount(5);
+  // 10/15(木) は大学 9:00-12:00 があるが 8:00-9:00 が空いている
+  await expect(cands.nth(0)).toContainText("10月15日（木） 08:00–09:00");
+  await expect(cands.nth(4)).toContainText("10月19日（月） 08:00–09:00");
+  // 承認するまで保存しない
+  expect((await stored(page)).tasks).toHaveLength(2);
+  await sheet.getByRole("button", { name: "この内容で作成（5回）" }).tap();
+  await expect(page.getByTestId("toast")).toContainText("5回に分けて配置しました");
+
+  let data = await stored(page);
+  const mine = data.tasks.filter((t: { title: string }) => t.title === "文法問題集");
+  expect(mine).toHaveLength(5);
+  expect(mine.every((t: { durationMin: number; stepId: string; goalId: string }) => t.durationMin === 60 && t.stepId === data.goalSteps[0].id && t.goalId === data.goals[0].id)).toBe(true);
+  expect(new Set(mine.map((t: { date: string }) => t.date)).size).toBe(5);
+  expect(data.goalSteps[0]).toMatchObject({ estimatedMinutes: 300, sessionMinutes: 60 });
+  await expect(row.getByTestId("step-progress-line")).toContainText("実績 0分 / 5時間・予定 5時間・未予定 0分");
+
+  // 残りをすべて予定済み → さらに作ろうとすると警告。「追加練習」を選んだときだけ作れる
+  await row.getByRole("button", { name: "文法問題集をタスクにする" }).tap();
+  await page.waitForTimeout(350);
+  await expect(sheet.getByTestId("over-plan")).toContainText("予定が残り必要時間を1時間超えます");
+  const createBtn = sheet.getByRole("button", { name: "タスクを作成（1時間）" });
+  await expect(createBtn).toBeDisabled();
+  await sheet.getByLabel("追加練習として予定する").check();
+  await createBtn.tap();
+  await expect(row.getByTestId("step-progress-line")).toContainText("予定 6時間");
+  await expect(row.getByTestId("step-progress-line")).toContainText("予定が残りを1時間超過");
+
+  // 計画画面で 10/15 の 1 回分を完了 → 実績 1時間、工程は完了にならない
+  await page.goto("/");
+  await expect(block(page, "文法問題集")).toHaveAttribute("data-start", "480");
+  await block(page, "文法問題集").tap();
+  await page.getByTestId("selected-bar").getByRole("button", { name: "完了" }).tap();
+  await expect(page.getByTestId("toast")).toContainText("実績 1時間 / 5時間（残り 4時間）");
+
+  // 実際の時間に修正（記録は1件のまま）
+  await page.goto("/goals");
+  await page.getByTestId("goal-card").filter({ hasText: "英文法" }).tap();
+  await expect(row).toHaveAttribute("data-step-status", "doing");
+  await expect(row.getByTestId("step-progress-line")).toContainText("実績 1時間 / 5時間");
+  await page.getByRole("button", { name: /の記録（1時間）を修正/ }).tap();
+  await page.getByTestId("worklog-form").getByLabel("作業時間（分）").fill("50");
+  await page.getByTestId("worklog-form").getByRole("button", { name: "修正する" }).tap();
+  await expect(row.getByTestId("step-progress-line")).toContainText("実績 50分 / 5時間");
+
+  // 再読み込み後も保持。既存のタスク・固定予定はそのまま
+  await page.reload();
+  data = await stored(page);
+  expect(data.workLogs).toHaveLength(1);
+  expect(data.workLogs[0]).toMatchObject({ minutes: 50, stepId: data.goalSteps[0].id });
+  expect(data.tasks.filter((t: { title: string }) => t.title === "文法問題集")).toHaveLength(6);
+  expect(data.goalSteps[0].estimatedMinutes).toBe(300);
+  expect(data.tasks.find((t: { id: string }) => t.id === "t1")).toMatchObject({ title: "レポート", date: "2026-10-15", startMin: 780 });
+  expect(data.fixedEvents[0]).toMatchObject({ id: "f1", skipDates: ["2026-10-21"] });
+  await expect(page.getByTestId("step-row").first().getByTestId("step-progress-line")).toContainText("実績 50分 / 5時間");
+});
+
+test("1回分を選んだ日の空き時間に配置する（30分・自由入力）", async ({ page }) => {
   await freshStart(page, V2);
   await page.goto("/goals");
   await addGoal(page, { title: "ギター" });
-  await addStep(page, "Fコードの練習", "0", "30");
+  await addStep(page, "Fコードの練習", "4", "0");
   const row = page.getByTestId("step-row").first();
-  const toTask = row.getByRole("button", { name: "Fコードの練習をタスクにする" });
-  await toTask.tap();
-  await expect(row.getByTestId("step-tasks")).toContainText("タスク 1件");
-  await expect(toTask).toHaveText("＋ タスクにして計画へ", { timeout: 3000 });
+  const sheet = page.getByTestId("step-task-sheet");
 
-  // 未配置のタスクが残っている → 確認。キャンセルなら作らない
-  page.once("dialog", (d) => {
-    expect(d.message()).toContain("まだ配置していないタスクが1件あります");
-    d.dismiss();
-  });
-  await toTask.tap();
-  await page.waitForTimeout(300);
-  await expect(row.getByTestId("step-tasks")).toContainText("タスク 1件");
+  await row.getByRole("button", { name: "Fコードの練習をタスクにする" }).tap();
+  await page.waitForTimeout(350);
+  await sheet.getByRole("radio", { name: "30分" }).tap();
+  await sheet.getByRole("radio", { name: "日付を指定して配置" }).tap();
+  await sheet.getByLabel("配置する日").fill("2026-10-15");
+  // 10/15(木)：大学 9:00-12:00、レポート 13:00-14:00 → 最も早い空きは 8:00
+  await expect(sheet.getByTestId("single-slot")).toContainText("08:00–08:30");
+  await sheet.getByRole("button", { name: "タスクを作成（30分）" }).tap();
+  await expect(page.getByTestId("toast")).toContainText("08:00から30分で配置しました");
 
-  // 確認して作る（別の日の分）
-  await expect(toTask).toHaveText("＋ タスクにして計画へ", { timeout: 3000 });
-  page.once("dialog", (d) => d.accept());
-  await toTask.tap();
-  await expect(row.getByTestId("step-tasks")).toContainText("タスク 2件");
+  // 自由入力 50分・未配置
+  await row.getByRole("button", { name: "Fコードの練習をタスクにする" }).tap();
+  await page.waitForTimeout(350);
+  await expect(sheet.getByRole("radio", { name: "30分" })).toHaveAttribute("aria-checked", "true"); // 前回の1回の時間を覚えている
+  await sheet.getByRole("radio", { name: "自由入力" }).tap();
+  await sheet.getByLabel("1回の作業時間（分）").fill("50");
+  await sheet.getByRole("button", { name: "タスクを作成（50分）" }).tap();
+
   const data = await stored(page);
-  expect(data.tasks.filter((t: { title: string }) => t.title === "Fコードの練習")).toHaveLength(2);
-  expect(data.tasks.filter((t: { id: string }) => t.id === "t1" || t.id === "t2")).toHaveLength(2);
+  const mine = data.tasks.filter((t: { title: string }) => t.title === "Fコードの練習");
+  expect(mine.map((t: { durationMin: number; date: string | null; startMin: number | null }) => [t.durationMin, t.date, t.startMin])).toEqual([
+    [30, "2026-10-15", 480],
+    [50, null, null],
+  ]);
+  expect(data.goalSteps[0]).toMatchObject({ estimatedMinutes: 240, sessionMinutes: 50 });
 });

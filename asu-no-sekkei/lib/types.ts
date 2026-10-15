@@ -109,6 +109,11 @@ export interface GoalStep {
   priority?: GoalPriority | null;
   /** 必要時間が AI の推定値のままか（編集すると false） */
   aiEstimated?: boolean;
+  /**
+   * 1 回の作業時間（分）。estimatedMinutes（工程全体の総必要時間）とは別。
+   * タスクにするときの初期値に使う。未設定なら 60 分
+   */
+  sessionMinutes?: number | null;
   createdAt: string;
   updatedAt: string;
 }
