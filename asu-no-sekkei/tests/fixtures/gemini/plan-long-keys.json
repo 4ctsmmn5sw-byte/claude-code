@@ -1,0 +1,14 @@
+{
+  "ready": true,
+  "questions": [],
+  "plan": {
+    "summary": "3つの工程に分けました",
+    "approach": "基礎から順に進めます",
+    "feasibility": { "status": "Tight", "reason": "週3時間だと余裕がありません" },
+    "steps": [
+      { "key": "vocabulary_foundation_step", "title": "単語帳の Unit1〜5 を1周する", "detail": "1日20語", "estimatedMinutes": "300", "priority": "High", "dependsOn": [] },
+      { "key": "grammar_practice_step", "title": "文法問題集を1周する", "detail": "", "estimatedMinutes": 600.4, "priority": "medium", "dependsOn": ["vocabulary_foundation_step", "nonexistent_step"] },
+      { "key": "mock_exam_step", "title": "模試を1回解く", "detail": "", "estimatedMinutes": 120, "priority": "low", "dependsOn": ["grammar_practice_step"] }
+    ]
+  }
+}

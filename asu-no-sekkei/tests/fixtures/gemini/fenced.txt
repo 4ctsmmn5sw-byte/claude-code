@@ -1,0 +1,4 @@
+以下が計画です。
+```json
+{"ready":true,"questions":[],"plan":{"summary":"","approach":"","feasibility":{"status":"ok","reason":""},"steps":[{"key":"s1","title":"準備する","detail":"","estimatedMinutes":30,"priority":"high","dependsOn":[]}]}}
+```

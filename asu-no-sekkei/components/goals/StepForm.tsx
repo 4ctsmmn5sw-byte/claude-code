@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useActionGuard } from "@/hooks/useActionGuard";
 import { STEP_STATUS_LABELS, wouldCreateCycle } from "@/lib/goals";
 import { actions } from "@/lib/store";
 import type { GoalStep, StepStatus } from "@/lib/types";
@@ -25,9 +26,11 @@ export function StepForm({
   const [title, setTitle] = useState(initial?.title ?? "");
   const [note, setNote] = useState(initial?.note ?? "");
   const [minutes, setMinutes] = useState<number | null>(initial?.estimatedMinutes ?? null);
+  const [session, setSession] = useState<string>(initial?.sessionMinutes ? String(initial.sessionMinutes) : "");
   const [status, setStatus] = useState<StepStatus>(initial?.status ?? "todo");
   const [deps, setDeps] = useState<string[]>(initial?.dependsOn ?? []);
   const [error, setError] = useState<string | null>(null);
+  const guard = useActionGuard(800);
   const selfId = initial?.id ?? "__new__";
   const candidates = siblings.filter((s) => s.id !== selfId);
 
@@ -37,14 +40,48 @@ export function StepForm({
         className="flex flex-col gap-4"
         onSubmit={(e) => {
           e.preventDefault();
-          const r = actions.saveStep({ id: initial?.id, goalId, title, note, estimatedMinutes: minutes, status, dependsOn: deps });
-          if (!r.ok) return setError(r.message);
-          onClose();
+          // 連打で同じ工程が2つ追加されないようにする
+          guard.run("save", () => {
+            const r = actions.saveStep({
+              id: initial?.id,
+              goalId,
+              title,
+              note,
+              estimatedMinutes: minutes,
+              status,
+              dependsOn: deps,
+              sessionMinutes: session.trim() === "" ? null : Math.round(Number(session)),
+            });
+            if (!r.ok) return setError(r.message);
+            onClose();
+          });
         }}
       >
         <TextField id="step-title" label="工程名" value={title} onChange={setTitle} placeholder="例：単語帳を1周する" maxLength={80} />
         <TextArea id="step-note" label="具体的な作業（任意）" value={note} onChange={setNote} placeholder="例：1日100語ずつ、例文も読む" />
-        <HoursInput id="step-minutes" label="必要時間（任意）" minutes={minutes} onChange={setMinutes} />
+        <div className="grid grid-cols-[1fr_auto] items-end gap-3">
+          <HoursInput id="step-minutes" label="総必要時間（任意）" minutes={minutes} onChange={setMinutes} />
+          <div className="flex flex-col gap-1">
+            <label htmlFor="step-session" className="text-xs font-medium text-neutral-500">
+              1回の作業時間
+            </label>
+            <div className="flex items-center gap-1 text-sm text-neutral-500">
+              <input
+                id="step-session"
+                type="number"
+                inputMode="numeric"
+                min={5}
+                max={600}
+                placeholder="60"
+                value={session}
+                onChange={(e) => setSession(e.target.value)}
+                className="h-12 w-20 rounded-xl border border-neutral-200 bg-white px-2 text-right text-base tabular-nums outline-none focus:border-neutral-400"
+              />
+              分
+            </div>
+          </div>
+        </div>
+        <p className="-mt-2 text-[11px] text-neutral-500">総必要時間は工程全体の目安、1回の作業時間はタスクにするときの長さです（空欄なら60分）。</p>
         <Segmented
           label="状態"
           value={status}

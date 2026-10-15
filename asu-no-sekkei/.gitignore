@@ -5,3 +5,7 @@ next-env.d.ts
 *.tsbuildinfo
 test-results/
 playwright-report/
+
+# 環境変数（API キーなど）は GitHub に置かない
+.env*
+!.env.example

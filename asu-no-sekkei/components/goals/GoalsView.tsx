@@ -9,9 +9,11 @@ import { deadlineLabel, goalStats, goalTab, PRIORITY_LABELS, sortGoals, type Goa
 import { useAppStore } from "@/lib/store";
 import { formatDuration } from "@/lib/time";
 import type { AppData, DateKey, Goal } from "@/lib/types";
+import type { GoalInput } from "@/lib/store";
 import { AppNav } from "../AppNav";
 import { Toast } from "../Toast";
 import { GoalDetail } from "./GoalDetail";
+import { AiPlanSheet } from "./AiPlanSheet";
 import { GoalForm } from "./GoalForm";
 
 const TABS: { key: GoalTab; label: string }[] = [
@@ -35,6 +37,7 @@ function GoalsContent({ data, today, goalId }: { data: AppData; today: DateKey; 
   const { toast, show, hide } = useToast();
   const [tab, setTab] = useState<GoalTab>("active");
   const [adding, setAdding] = useState(false);
+  const [aiInput, setAiInput] = useState<GoalInput | null>(null);
   const selected = goalId ? data.goals.find((g) => g.id === goalId) ?? null : null;
   const categories = useMemo(() => [...new Set(data.goals.map((g) => g.category).filter(Boolean))], [data.goals]);
   const counts = useMemo(() => {
@@ -110,6 +113,22 @@ function GoalsContent({ data, today, goalId }: { data: AppData; today: DateKey; 
           onSaved={(id) => {
             setAdding(false);
             show("目標を追加しました。工程を追加しましょう");
+            router.push(`/goals?id=${encodeURIComponent(id)}`);
+          }}
+          onAiPlan={(input) => {
+            setAdding(false);
+            setAiInput(input);
+          }}
+        />
+      )}
+      {aiInput && (
+        <AiPlanSheet
+          today={today}
+          initialGoal={aiInput}
+          onClose={() => setAiInput(null)}
+          onSaved={(id, n) => {
+            setAiInput(null);
+            show(`AI の提案をもとに目標と${n}つの工程を保存しました`);
             router.push(`/goals?id=${encodeURIComponent(id)}`);
           }}
         />
