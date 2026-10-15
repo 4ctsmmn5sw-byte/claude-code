@@ -1,0 +1,10 @@
+{
+  "ready": false,
+  "questions": [
+    { "id": "current_level_assessment", "question": "今のTOEICの点数は何点ですか？", "why": "出発点を決めるため", "options": ["600点未満", "600〜700点", "700点以上"] },
+    { "id": "success_criteria_definition", "question": "何点を取れたら達成としますか？", "why": "ゴールを決めるため", "options": ["800点", "850点", "900点"] },
+    { "id": "weekly_available_study_time", "question": "1週間に何時間くらい勉強できますか？", "why": "期限に間に合うか判断するため", "options": ["3時間", "5時間", "10時間以上"] },
+    { "id": "deadline_confirmation_question", "question": "受験日は決まっていますか？", "why": "逆算のため", "options": ["決まっている", "まだ"] }
+  ],
+  "plan": { "summary": "", "approach": "", "feasibility": { "status": "unknown", "reason": "" }, "steps": [] }
+}

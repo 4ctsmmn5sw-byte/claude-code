@@ -1,0 +1,8 @@
+{
+  "ready": true,
+  "questions": [],
+  "plan": {
+    "summary": "", "approach": "", "feasibility": { "status": "ok", "reason": "" },
+    "steps": [ { "key": "s1", "title": "全部やる", "detail": "", "estimatedMinutes": 99999, "priority": "high", "dependsOn": [] } ]
+  }
+}

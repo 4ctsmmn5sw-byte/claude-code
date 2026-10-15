@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isDateKey } from "../date";
+import { normalizeAiResponse } from "./normalize";
 
 /**
  * AI による目標分解の入出力の形。サーバーとブラウザの両方で使う。
@@ -75,16 +76,18 @@ const PRIORITIES = ["high", "medium", "low"] as const;
 const FEASIBILITY = ["ok", "tight", "unlikely", "unknown"] as const;
 
 const aiStepSchema = z.object({
-  key: z.string().min(1).max(10),
+  /** アプリ側で振り直した識別子（s1, s2 …） */
+  key: z.string().regex(/^s\d{1,2}$/),
   title: z.string().trim().min(1).max(LIMITS.stepTitle),
   detail: z.string().max(LIMITS.stepDetail),
   estimatedMinutes: z.number().int().min(LIMITS.stepMinMinutes).max(LIMITS.stepMaxMinutes),
   priority: z.enum(PRIORITIES),
-  dependsOn: z.array(z.string().max(10)).max(LIMITS.steps),
+  dependsOn: z.array(z.string().regex(/^s\d{1,2}$/)).max(LIMITS.steps),
 });
 
 const aiQuestionSchema = z.object({
-  id: z.string().min(1).max(20),
+  /** アプリ側で振り直した識別子（q1, q2 …）。AI が返した id は使わない */
+  id: z.string().regex(/^q\d{1,2}$/),
   question: z.string().trim().min(1).max(LIMITS.question),
   why: z.string().max(LIMITS.question),
   options: z.array(z.string().max(60)).max(LIMITS.options),
@@ -121,7 +124,7 @@ export const aiResponseJsonSchema = {
       items: {
         type: "object",
         properties: {
-          id: { type: "string" },
+          id: { type: "string", description: "q1, q2 のような短い識別子" },
           question: { type: "string", description: "日本語の短い質問" },
           why: { type: "string", description: "なぜ必要か（短く）" },
           options: { type: "array", maxItems: LIMITS.options, items: { type: "string" }, description: "選択肢の例（任意）" },
@@ -170,17 +173,21 @@ export const aiResponseJsonSchema = {
   required: ["ready", "questions", "plan"],
 } as const;
 
-export type ValidationResult = { ok: true; data: AiResponse } | { ok: false; issues: string[] };
+export type ValidationResult = { ok: true; data: AiResponse; repairs: string[] } | { ok: false; issues: string[]; repairs: string[] };
 
 /**
- * AI の出力を検証する。形式・数値の範囲に加え、工程の key の重複、
- * 存在しない前提（取り除く）、前提の循環（拒否）を確認する。
- * final（これ以上質問しない）のときは計画が必須。
+ * AI の出力を検証する。
+ * 1. normalizeAiResponse で、意味を変えずに直せる違い（長い・重複した id、数字の文字列など）を直す
+ * 2. 厳密なスキーマ（型・文字数・数値の範囲）で検証する
+ * 3. 工程の key の重複・前提の循環（拒否）、final（これ以上質問しない）なのに計画がない、などを確認する
  */
 export function validateAiResponse(raw: unknown, opts: { final: boolean }): ValidationResult {
-  const parsed = aiResponseSchema.safeParse(raw);
+  const normalized = normalizeAiResponse(raw);
+  const repairs = normalized.repairs;
+  if (!normalized.ok) return { ok: false, issues: normalized.issues, repairs };
+  const parsed = aiResponseSchema.safeParse(normalized.data);
   if (!parsed.success) {
-    return { ok: false, issues: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`) };
+    return { ok: false, issues: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`), repairs };
   }
   const data = structuredClone(parsed.data);
   const issues: string[] = [];
@@ -196,11 +203,13 @@ export function validateAiResponse(raw: unknown, opts: { final: boolean }): Vali
     if (keys.has(s.key)) issues.push(`工程の key が重複しています: ${s.key}`);
     keys.add(s.key);
   }
+  const qids = new Set(data.questions.map((q) => q.id));
+  if (qids.size !== data.questions.length) issues.push("質問の id が重複しています");
   // 存在しない工程・自分自身への前提は取り除く
   for (const s of steps) s.dependsOn = [...new Set(s.dependsOn.filter((d) => d !== s.key && keys.has(d)))];
   if (hasCycle(steps)) issues.push("工程の前提関係が循環しています");
 
-  return issues.length > 0 ? { ok: false, issues } : { ok: true, data };
+  return issues.length > 0 ? { ok: false, issues, repairs } : { ok: true, data, repairs };
 }
 
 export function hasCycle(steps: Pick<AiStep, "key" | "dependsOn">[]): boolean {

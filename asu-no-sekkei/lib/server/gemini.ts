@@ -7,6 +7,7 @@ import {
   type PlanErrorCode,
   type PlanRequest,
 } from "../ai/planSchema";
+import { extractJson } from "../ai/normalize";
 
 /**
  * Gemini API（公式 Google GenAI SDK）で目標を工程に分解する。
@@ -28,6 +29,7 @@ export const SYSTEM_INSTRUCTION = `あなたは目標達成の計画づくりを
 - 計画に必要な情報（今の進み具合・達成条件・期限・1週間に使える時間）が足りず、計画の質が大きく変わる場合だけ ready=false にして、最大4つの短い質問を返す。答えやすいよう options に選択肢の例を入れる。final が true のときは質問せず、必ず ready=true で計画を返す。
 - 工程は 3〜12 個程度。1つの工程は「何をどこまでやるか」が分かる具体的な作業にする（例：「単語帳の Unit1〜5 を1周する」）。抽象的な工程（「頑張る」「勉強する」）にしない。
 - estimatedMinutes は1工程あたりの推定所要時間（分、5〜3000）。あくまで目安の推定値として、無理のない値にする。
+- 質問の id は q1, q2…、工程の key は s1, s2… のような短い値にする。
 - 作業の順番は steps の並びで表し、先に終える必要がある工程は dependsOn に key を入れる。循環させない。
 - priority は目標達成への重要度（high/medium/low）。
 - feasibility：期限と使える時間から、期限までに完了できそうか判断する（ok/tight/unlikely/unknown）。難しい場合は理由（不足する時間、前提の遅れなど）を reason に具体的に書く。情報がなければ unknown。
@@ -112,17 +114,33 @@ export async function generatePlan(
 }
 
 export function parseModelOutput(text: string, final: boolean): GenerateResult {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch {
-    return { ok: false, code: "invalid_output", message: "AI の応答を読み取れませんでした（JSON ではありません）。もう一度試してください" };
+  const json = extractJson(text);
+  if (!json.ok) {
+    logOutputProblem("json", [json.reason], []);
+    return { ok: false, code: "invalid_output", message: `AI の応答を読み取れませんでした（${json.reason}）。もう一度お試しください` };
   }
-  const v = validateAiResponse(raw, { final });
+  const v = validateAiResponse(json.value, { final });
+  const repairs = json.repaired ? ["JSON の前後の余分な文字を除きました", ...v.repairs] : v.repairs;
   if (!v.ok) {
-    return { ok: false, code: "invalid_output", message: `AI の応答の形式が正しくありませんでした（${v.issues.slice(0, 2).join(" / ")}）。もう一度試してください` };
+    logOutputProblem("schema", v.issues, repairs);
+    return {
+      ok: false,
+      code: "invalid_output",
+      message: `AI の応答の内容に問題があったため、計画を表示できませんでした（${v.issues[0]}）。もう一度お試しください`,
+    };
   }
+  if (repairs.length > 0) logOutputProblem("repaired", [], repairs);
   return { ok: true, data: v.data };
+}
+
+/**
+ * AI の出力の問題をサーバーのログに残す（原因の調査用）。
+ * 記録するのは項目の場所と理由だけで、目標や回答などユーザーの入力内容は記録しない。
+ */
+function logOutputProblem(kind: "json" | "schema" | "repaired", issues: string[], repairs: string[]) {
+  const entry = { kind, issues: issues.slice(0, 10), repairs: repairs.slice(0, 20) };
+  if (kind === "repaired") console.info("[ai] output normalized", JSON.stringify(entry));
+  else console.warn("[ai] invalid output", JSON.stringify(entry));
 }
 
 /**
