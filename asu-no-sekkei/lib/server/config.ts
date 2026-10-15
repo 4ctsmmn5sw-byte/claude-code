@@ -21,6 +21,8 @@ export interface AiConfig {
 
 export const DEFAULT_MODEL = "gemini-2.5-flash";
 export const DEFAULT_DAILY_LIMIT = 10;
+/** パスコードの最低文字数（総当たりで当てられにくくするため） */
+export const MIN_PASSCODE_LENGTH = 8;
 
 const MODEL_PATTERN = /^[a-z0-9][a-z0-9.\-]{2,60}$/;
 
@@ -47,6 +49,9 @@ export function readConfig(env: Record<string, string | undefined> = process.env
 export function misconfiguration(cfg: AiConfig): string | null {
   if (cfg.apiKey && !cfg.passcode) {
     return "GEMINI_API_KEY が設定されていますが、APP_PASSCODE が未設定のため AI 機能を止めています（第三者に使われないため）";
+  }
+  if (cfg.apiKey && cfg.passcode && cfg.passcode.length < MIN_PASSCODE_LENGTH) {
+    return `APP_PASSCODE が短すぎるため AI 機能を止めています。${MIN_PASSCODE_LENGTH}文字以上にしてください（総当たりで当てられないため）`;
   }
   return null;
 }

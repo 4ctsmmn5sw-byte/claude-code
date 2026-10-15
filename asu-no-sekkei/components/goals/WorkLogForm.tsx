@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useActionGuard } from "@/hooks/useActionGuard";
 import { actions } from "@/lib/store";
 import type { DateKey, GoalStep } from "@/lib/types";
 import { Modal } from "../Modal";
@@ -24,6 +25,7 @@ export function WorkLogForm({
   const [stepId, setStepId] = useState<string>("");
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const guard = useActionGuard(800);
 
   return (
     <Modal title="作業時間を記録" onClose={onClose} testId="worklog-form">
@@ -32,9 +34,11 @@ export function WorkLogForm({
         onSubmit={(e) => {
           e.preventDefault();
           if (!date) return setError("日付を入力してください");
-          const r = actions.addWorkLog({ goalId, stepId: stepId || null, date, minutes: Number(minutes), note });
-          if (!r.ok) return setError(r.message);
-          onClose();
+          guard.run("save", () => {
+            const r = actions.addWorkLog({ goalId, stepId: stepId || null, date, minutes: Number(minutes), note });
+            if (!r.ok) return setError(r.message);
+            onClose();
+          });
         }}
       >
         <div className="grid grid-cols-2 gap-3">

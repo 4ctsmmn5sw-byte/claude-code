@@ -5,11 +5,13 @@ import {
   clientIp,
   createSessionValue,
   isAuthenticated,
-  recordFailedAttempt,
+  LOGIN_LIMITS,
+  loginBlocked,
+  recordLoginFailure,
   sessionCookieHeader,
-  tooManyAttempts,
 } from "./auth";
 import { authRequired, misconfiguration, type AiConfig } from "./config";
+import { applyComputedFeasibility } from "../ai/feasibility";
 import { checkModel, generatePlan, mockPlan, type ModelCaller, type ModelChecker } from "./gemini";
 import { consume, storeFor, usage, type CounterStore } from "./rateLimit";
 
@@ -21,6 +23,8 @@ export interface Deps {
   store?: CounterStore;
   caller?: ModelCaller;
   checker?: ModelChecker;
+  /** テスト用：パスコードを間違えたときの待ち時間 */
+  failureDelayMs?: number;
 }
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
@@ -58,8 +62,14 @@ export async function handleLogin(req: Request, deps: Deps): Promise<Response> {
   const { cfg } = deps;
   if (!sameOrigin(req)) return json({ ok: false, message: "許可されていない呼び出しです" }, 403);
   if (!cfg.passcode) return json({ ok: true });
+  if (misconfiguration(cfg)) return json({ ok: false, message: misconfiguration(cfg) }, 503);
   const ip = clientIp(req);
-  if (tooManyAttempts(ip)) return json({ ok: false, message: "パスコードの入力回数が多すぎます。15分ほど待ってから試してください" }, 429);
+  const store = deps.store ?? storeFor(cfg);
+  const blocked = await loginBlocked(store, ip);
+  if (blocked === "global") {
+    return json({ ok: false, message: "パスコードの誤りが多いため、今日はログインを止めています。太平洋時間の午前0時（日本時間 16〜17時）以降に試してください" }, 429);
+  }
+  if (blocked === "ip") return json({ ok: false, message: "パスコードの入力回数が多すぎます。15分ほど待ってから試してください" }, 429);
   let passcode = "";
   try {
     const body = (await req.json()) as { passcode?: unknown };
@@ -68,7 +78,8 @@ export async function handleLogin(req: Request, deps: Deps): Promise<Response> {
     /* 空として扱う */
   }
   if (!checkPasscode(cfg, passcode)) {
-    recordFailedAttempt(ip);
+    await recordLoginFailure(store, ip);
+    await new Promise((r) => setTimeout(r, deps.failureDelayMs ?? LOGIN_LIMITS.failureDelayMs));
     return json({ ok: false, message: "パスコードが違います" }, 401);
   }
   return json({ ok: true }, 200, { "Set-Cookie": sessionCookieHeader(cfg, createSessionValue(cfg)) });
@@ -137,12 +148,13 @@ export async function handlePlan(req: Request, deps: Deps): Promise<Response> {
   }
 
   if (!cfg.apiKey) {
-    return json({ ok: true, data: mockPlan(request), mock: true, model: "仮データ", usage: usageNow } satisfies PlanApiResponse);
+    return json({ ok: true, data: applyComputedFeasibility(request, mockPlan(request)), mock: true, model: "仮データ", usage: usageNow } satisfies PlanApiResponse);
   }
   const result = await generatePlan(request, { apiKey: cfg.apiKey, model: cfg.model, caller: deps.caller });
   if (!result.ok) {
     const status = result.code === "quota_exceeded" ? 429 : result.code === "invalid_output" ? 502 : result.code === "timeout" ? 504 : 502;
     return fail(status, { ok: false, code: result.code, message: result.message, usage: usageNow });
   }
-  return json({ ok: true, data: result.data, mock: false, model: cfg.model, usage: usageNow } satisfies PlanApiResponse);
+  // 期限に間に合うかは、アプリが計算した数値で判断する
+  return json({ ok: true, data: applyComputedFeasibility(request, result.data), mock: false, model: cfg.model, usage: usageNow } satisfies PlanApiResponse);
 }

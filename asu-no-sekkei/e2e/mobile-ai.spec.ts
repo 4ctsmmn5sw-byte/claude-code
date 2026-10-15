@@ -46,12 +46,16 @@ test("目標を入力 → AI の質問に回答 → 提案を編集 → 承認�
   const draft = s.getByTestId("ai-draft");
   await expect(draft).toBeVisible();
   await expect(draft).toContainText("必要時間は AI による推定値です");
-  await expect(draft.getByTestId("ai-feasibility")).toContainText("AI の見立て：期限までにぎりぎり");
+  // 間に合うかはアプリが計算した数値で判断する
+  await expect(draft.getByTestId("ai-feasibility")).toContainText("余裕はあまりありません");
   const capacity = draft.getByTestId("capacity-check");
   // 10/14〜12/20 の 68日 × 週3時間 ÷ 7 = 29時間8分、合計 30+45+600+600+180 = 24時間15分（8割超 → ぎりぎり）
-  await expect(capacity).toContainText("必要時間の合計（推定）：24時間15分");
-  await expect(capacity).toContainText("期限までに使える時間：29時間8分");
-  await expect(capacity).toContainText("余裕はあまりありません");
+  await expect(capacity).toContainText("期限まで68日（約9.7週）");
+  await expect(capacity).toContainText("使える時間29時間8分（週3時間 × 68日 ÷ 7）");
+  await expect(capacity).toContainText("今回の工程24時間15分（推定）");
+  await expect(capacity).toContainText("残りの作業24時間15分");
+  // 1455分 × 7 ÷ 68日 = 149.8 → 週あたり 150分
+  await expect(capacity.getByTestId("required-weekly")).toHaveText("週あたり 2時間30分");
   const steps = draft.getByTestId("ai-step");
   await expect(steps).toHaveCount(5);
   await expect(steps.nth(0)).toContainText("AI推定");
@@ -65,7 +69,8 @@ test("目標を入力 → AI の質問に回答 → 提案を編集 → 承認�
   await expect(steps).toHaveCount(4);
   await draft.getByRole("button", { name: "＋ 工程を追加" }).tap();
   await draft.getByLabel("工程5の名前").fill("単語アプリを入れる");
-  await expect(capacity).toContainText("必要時間の合計（推定）：14時間55分");
+  await expect(capacity).toContainText("残りの作業14時間55分");
+  await expect(capacity.getByTestId("required-weekly")).toHaveText("週あたり 1時間33分");
   await expect(capacity).toContainText("期限までの時間に収まります");
 
   // 保存前は何も保存されていない
@@ -143,7 +148,7 @@ test("既存の目標に工程を提案してもらう／上限・無料枠超�
           plan: {
             summary: "残りを2つに分けました",
             approach: "",
-            feasibility: { status: "unlikely", reason: "週1時間では12月20日までに必要な時間が足りません" },
+            feasibility: { status: "ok", reason: "前提の工程が多いので、早めに始めてください" },
             steps: [
               { key: "a", title: "Part5 を毎日10問", detail: "", estimatedMinutes: 600, priority: "high", dependsOn: [] },
               { key: "b", title: "模試を1回解く", detail: "", estimatedMinutes: 120, priority: "medium", dependsOn: ["a"] },
@@ -171,13 +176,19 @@ test("既存の目標に工程を提案してもらう／上限・無料枠超�
   // 上限に達しているときはエラーを出して止まる
   mode = "daily";
   await s.getByLabel("1週間に使える時間（任意）（時間）").fill("1");
-  await s.getByRole("button", { name: /AIに相談する/ }).tap();
+  // 連打しても送信は 1 回だけ（AI の回数を無駄に使わない）
+  await s.getByRole("button", { name: /AIに相談する/ }).evaluate((el: HTMLElement) => {
+    el.click();
+    el.click();
+    el.click();
+  });
   await expect(s.getByTestId("ai-error")).toContainText("今日の AI の利用上限（10回）に達しました");
   await expect(s.getByRole("button", { name: /AIに相談する/ })).toBeDisabled();
   expect(calls).toBe(1);
   // AI に送るのは目標の内容と既存の工程名だけ（時間割・予定・作業記録は送らない）
-  expect(Object.keys(lastBody).sort()).toEqual(["answers", "existingSteps", "final", "goal", "situation", "today", "weeklyMinutes"]);
+  expect(Object.keys(lastBody).sort()).toEqual(["answers", "existingRemainingMinutes", "existingSteps", "final", "goal", "situation", "today", "weeklyMinutes"]);
   expect(lastBody.existingSteps).toEqual(["単語帳"]);
+  expect(lastBody.existingRemainingMinutes).toBe(0); // 既存の工程は完了済み
   expect(JSON.stringify(lastBody)).not.toMatch(/大学|アルバイト|レポート/);
 
   // 開き直す → 無料枠超過も同じく止まる（自動で再試行しない）
@@ -196,9 +207,11 @@ test("既存の目標に工程を提案してもらう／上限・無料枠超�
   mode = "plan";
   await s.getByRole("button", { name: /AIに相談する/ }).tap();
   const draft = s.getByTestId("ai-draft");
-  await expect(draft.getByTestId("ai-feasibility")).toContainText("期限までの完了は難しい見込み");
-  await expect(draft.getByTestId("ai-feasibility")).toContainText("週1時間では12月20日までに必要な時間が足りません");
-  await expect(draft.getByTestId("capacity-check")).toContainText("不足します");
+  // AI は「ok」と返しても、計算（必要 12時間 > 使える 9時間42分）で「終わりません」と表示する
+  await expect(draft.getByTestId("ai-feasibility")).toContainText("このままでは期限までに終わりません（約2時間18分不足");
+  await expect(draft.getByTestId("ai-comment")).toContainText("前提の工程が多いので、早めに始めてください");
+  await expect(draft.getByTestId("capacity-check")).toContainText("既存の残り0分");
+  await expect(draft.getByTestId("required-weekly")).toHaveText("週あたり 1時間15分");
   await draft.getByRole("button", { name: "この内容で保存する（2工程）" }).tap();
   await s.getByRole("button", { name: "あとで（目標を開く）" }).tap();
 

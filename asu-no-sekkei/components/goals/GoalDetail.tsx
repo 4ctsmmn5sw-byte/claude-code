@@ -2,7 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useActionGuard } from "@/hooks/useActionGuard";
 import type { ToastAction, ToastTone } from "@/hooks/useToast";
+import { requiredWeeklyMinutes } from "@/lib/ai/feasibility";
 import { formatDateLabel } from "@/lib/date";
 import {
   deadlineLabel,
@@ -58,11 +60,22 @@ export function GoalDetail({
   const dl = deadlineLabel(st.daysLeft);
   const actualRatio = st.estimatedMinutes ? Math.min(1, st.actualMinutes / st.estimatedMinutes) : 0;
 
-  const createTask = (step: GoalStep) => {
-    const r = actions.createTaskFromStep(step.id);
-    if (!r.ok) return notify(r.message, "error");
-    notify(`「${step.title}」を未配置タスクに追加しました`, "info", { label: "計画を開く", run: () => router.push("/") });
-  };
+  // 連打で同じ工程のタスクが重複しないようにする（時間をおけば、別の日の練習用にもう一度作れる）
+  const guard = useActionGuard(1500);
+  const createTask = (step: GoalStep) =>
+    guard.run(`task:${step.id}`, () => {
+      const unplaced = tasksOfStep(data.tasks, step.id).filter((t) => !t.done && t.date === null);
+      if (
+        unplaced.length > 0 &&
+        !window.confirm(`「${step.title}」のまだ配置していないタスクが${unplaced.length}件あります。もう1つ作りますか？（別の日にも取り組む場合など）`)
+      ) {
+        return;
+      }
+      const r = actions.createTaskFromStep(step.id);
+      if (!r.ok) return notify(r.message, "error");
+      notify(`「${step.title}」を未配置タスクに追加しました`, "info", { label: "計画を開く", run: () => router.push("/") });
+    });
+  const pace = goal.deadline && st.daysLeft !== null ? requiredWeeklyMinutes(st.remainingStepMinutes, st.daysLeft + 1) : null;
 
   return (
     <>
@@ -139,7 +152,11 @@ export function GoalDetail({
           </div>
         </section>
         {st.remainingStepMinutes > 0 && (
-          <p className="mt-2 text-xs text-neutral-500">残りの工程の必要時間（目安）：{formatDuration(st.remainingStepMinutes)}</p>
+          <p className="mt-2 text-xs text-neutral-500" data-testid="remaining-pace">
+            残りの工程の必要時間（目安）：{formatDuration(st.remainingStepMinutes)}
+            {pace !== null && <>・期限までに終えるには週あたり約{formatDuration(pace)}</>}
+            {goal.deadline && st.daysLeft !== null && st.daysLeft < 0 && <>・期限を過ぎています</>}
+          </p>
         )}
 
         {/* 工程 */}
@@ -164,6 +181,7 @@ export function GoalDetail({
                   blockers={unfinishedDependencies(data.goalSteps, s)}
                   onOpen={() => setStepForm(s)}
                   onCreateTask={() => createTask(s)}
+                  creating={guard.isBusy(`task:${s.id}`)}
                 />
               ))}
             </ol>
@@ -312,7 +330,7 @@ export function GoalDetail({
             category: goal.category,
             status: goal.status,
           }}
-          existingGoal={{ id: goal.id, stepTitles: steps.map((s) => s.title) }}
+          existingGoal={{ id: goal.id, stepTitles: steps.map((s) => s.title), remainingMinutes: st.remainingStepMinutes }}
           onClose={() => setAiOpen(false)}
           onSaved={(_, n) => {
             setAiOpen(false);
@@ -333,6 +351,7 @@ function StepRow({
   blockers,
   onOpen,
   onCreateTask,
+  creating,
 }: {
   step: GoalStep;
   index: number;
@@ -341,6 +360,7 @@ function StepRow({
   blockers: GoalStep[];
   onOpen: () => void;
   onCreateTask: () => void;
+  creating: boolean;
 }) {
   const linked = tasksOfStep(data.tasks, step.id);
   const done = step.status === "done";
@@ -409,10 +429,11 @@ function StepRow({
           <button
             type="button"
             onClick={onCreateTask}
-            className="h-11 w-full rounded-xl text-sm font-medium text-violet-700 active:bg-violet-50"
+            disabled={creating}
+            className="h-11 w-full rounded-xl text-sm font-medium text-violet-700 active:bg-violet-50 disabled:text-neutral-400"
             aria-label={`${step.title}をタスクにする`}
           >
-            ＋ タスクにして計画へ
+            {creating ? "追加しました" : "＋ タスクにして計画へ"}
           </button>
         </div>
       )}

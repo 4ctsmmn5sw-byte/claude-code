@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useActionGuard } from "@/hooks/useActionGuard";
 import { GOAL_STATUS_LABELS, PRIORITY_LABELS } from "@/lib/goals";
 import { actions, type GoalInput } from "@/lib/store";
 import type { Goal, GoalPriority, GoalStatus } from "@/lib/types";
@@ -39,6 +40,7 @@ export function GoalForm({
     status: initial?.status ?? defaultStatus,
   }));
   const [error, setError] = useState<string | null>(null);
+  const guard = useActionGuard(800);
   const set = <K extends keyof GoalInput>(k: K, val: GoalInput[K]) => setV((cur) => ({ ...cur, [k]: val }));
   const suggestions = [...new Set([...categories, ...CATEGORY_SUGGESTIONS])].filter(Boolean).slice(0, 8);
 
@@ -48,9 +50,12 @@ export function GoalForm({
         className="flex flex-col gap-4"
         onSubmit={(e) => {
           e.preventDefault();
-          const r = actions.saveGoal({ ...v, id: initial?.id });
-          if (!r.ok) return setError(r.message);
-          onSaved(r.id!);
+          // 連打で同じ目標が2つ作られないようにする
+          guard.run("save", () => {
+            const r = actions.saveGoal({ ...v, id: initial?.id });
+            if (!r.ok) return setError(r.message);
+            onSaved(r.id!);
+          });
         }}
       >
         <TextField id="goal-title" label="目標名" value={v.title} onChange={(x) => set("title", x)} placeholder="例：TOEIC 800点を取る" maxLength={80} />

@@ -70,7 +70,16 @@ test("既存データを保ったまま、目標→工程→タスク→計画�
   await expect(page.getByTestId("goal-detail")).toContainText("残りの工程の必要時間（目安）：2時間45分");
 
   // 工程からタスクを作る → 計画を開く
-  await rows.nth(0).getByRole("button", { name: "単語帳 Unit1をタスクにする" }).tap();
+  // 連打しても 1 件だけ作る
+  const toTask = rows.nth(0).getByRole("button", { name: "単語帳 Unit1をタスクにする" });
+  // 再描画の前に届く 2 回目のタップ（同じ瞬間の連続クリック）も無視する
+  await toTask.evaluate((el: HTMLElement) => {
+    el.click();
+    el.click();
+    el.click();
+  });
+  await expect(toTask).toHaveText("追加しました");
+  await expect(toTask).toBeDisabled();
   await expect(rows.nth(0)).toHaveAttribute("data-step-status", "doing");
   await expect(rows.nth(0).getByTestId("step-tasks")).toContainText("タスク 1件");
   await page.getByTestId("toast").getByRole("button", { name: "計画を開く" }).tap();
@@ -223,4 +232,34 @@ test("実行画面は今日の時間割、計画画面は明日から始まる",
   await expect(page.getByTestId("fixed-event")).toContainText("大学");
   await nav(page, "計画").tap();
   await expect(page.getByTestId("current-date")).toContainText("10月15日（木）");
+});
+
+test("同じ工程を別の日にも練習できる（時間をおけばもう一度タスクにでき、未配置が残っていれば確認する）", async ({ page }) => {
+  await freshStart(page, V2);
+  await page.goto("/goals");
+  await addGoal(page, { title: "ギター" });
+  await addStep(page, "Fコードの練習", "0", "30");
+  const row = page.getByTestId("step-row").first();
+  const toTask = row.getByRole("button", { name: "Fコードの練習をタスクにする" });
+  await toTask.tap();
+  await expect(row.getByTestId("step-tasks")).toContainText("タスク 1件");
+  await expect(toTask).toHaveText("＋ タスクにして計画へ", { timeout: 3000 });
+
+  // 未配置のタスクが残っている → 確認。キャンセルなら作らない
+  page.once("dialog", (d) => {
+    expect(d.message()).toContain("まだ配置していないタスクが1件あります");
+    d.dismiss();
+  });
+  await toTask.tap();
+  await page.waitForTimeout(300);
+  await expect(row.getByTestId("step-tasks")).toContainText("タスク 1件");
+
+  // 確認して作る（別の日の分）
+  await expect(toTask).toHaveText("＋ タスクにして計画へ", { timeout: 3000 });
+  page.once("dialog", (d) => d.accept());
+  await toTask.tap();
+  await expect(row.getByTestId("step-tasks")).toContainText("タスク 2件");
+  const data = await stored(page);
+  expect(data.tasks.filter((t: { title: string }) => t.title === "Fコードの練習")).toHaveLength(2);
+  expect(data.tasks.filter((t: { id: string }) => t.id === "t1" || t.id === "t2")).toHaveLength(2);
 });

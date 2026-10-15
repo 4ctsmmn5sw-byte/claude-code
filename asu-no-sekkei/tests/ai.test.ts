@@ -157,7 +157,9 @@ describe("設定", () => {
 
   it("API キーがあるのにパスコードがなければ使えない", () => {
     expect(misconfiguration(readConfig({ GEMINI_API_KEY: "k" }))).not.toBeNull();
-    expect(misconfiguration(readConfig({ GEMINI_API_KEY: "k", APP_PASSCODE: "p" }))).toBeNull();
+    expect(misconfiguration(readConfig({ GEMINI_API_KEY: "k", APP_PASSCODE: "long-enough-1" }))).toBeNull();
+    // 短すぎるパスコードは総当たりで当てられるため使わない
+    expect(misconfiguration(readConfig({ GEMINI_API_KEY: "k", APP_PASSCODE: "1234567" }))).toContain("8文字以上");
     expect(misconfiguration(readConfig({}))).toBeNull(); // 仮データ
   });
 });

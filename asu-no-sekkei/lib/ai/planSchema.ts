@@ -51,6 +51,8 @@ export const planRequestSchema = z.object({
     .max(LIMITS.answers),
   /** 既存の目標に工程を足すとき、重複を避けるための既存の工程名（名前だけ） */
   existingSteps: z.array(z.string().max(LIMITS.stepTitle)).max(LIMITS.steps),
+  /** 既存の目標に工程を足すとき、既存の未完了の工程の必要時間の合計（分）。期限までの計算に使う */
+  existingRemainingMinutes: z.number().int().min(0).max(1_000_000).optional(),
   /** これ以上質問せず計画を返してほしいとき */
   final: z.boolean(),
   today: dateKey,

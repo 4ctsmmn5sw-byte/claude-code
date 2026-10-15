@@ -17,19 +17,34 @@ export interface CounterStore {
   decr(key: string): Promise<void>;
 }
 
-const memory: Map<string, number> = ((globalThis as { __asuAiCounter?: Map<string, number> }).__asuAiCounter ??= new Map());
+type MemoryEntry = { v: number; exp: number };
+const memory: Map<string, MemoryEntry> = ((globalThis as { __asuAiCounter2?: Map<string, MemoryEntry> }).__asuAiCounter2 ??= new Map());
+
+const live = (key: string, now = Date.now()) => {
+  const e = memory.get(key);
+  if (e && e.exp <= now) {
+    memory.delete(key);
+    return undefined;
+  }
+  return e;
+};
 
 export const memoryStore: CounterStore = {
   async get(key) {
-    return memory.get(key) ?? 0;
+    return live(key)?.v ?? 0;
   },
-  async incr(key) {
-    const v = (memory.get(key) ?? 0) + 1;
-    memory.set(key, v);
+  async incr(key, ttlSeconds) {
+    const now = Date.now();
+    // 期限切れの記録を時々掃除する（メモリが増え続けないように）
+    if (memory.size > 1000) for (const k of [...memory.keys()]) live(k, now);
+    const e = live(key, now);
+    const v = (e?.v ?? 0) + 1;
+    memory.set(key, { v, exp: e?.exp ?? now + ttlSeconds * 1000 });
     return v;
   },
   async decr(key) {
-    memory.set(key, Math.max(0, (memory.get(key) ?? 0) - 1));
+    const e = live(key);
+    if (e) memory.set(key, { ...e, v: Math.max(0, e.v - 1) });
   },
 };
 

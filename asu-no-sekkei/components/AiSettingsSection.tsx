@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useActionGuard } from "@/hooks/useActionGuard";
 import { checkAiModel, fetchAiStatus, loginAi, logoutAi } from "@/lib/ai/client";
 import type { AiStatus } from "@/lib/ai/planSchema";
 
@@ -9,6 +10,7 @@ export function AiSettingsSection() {
   const [status, setStatus] = useState<AiStatus | null | undefined>(undefined);
   const [passcode, setPasscode] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const guard = useActionGuard(800);
   const reload = () => fetchAiStatus().then(setStatus);
   useEffect(() => {
     let alive = true;
@@ -50,12 +52,14 @@ export function AiSettingsSection() {
             ) : (
               <form
                 className="mt-2 flex gap-2"
-                onSubmit={async (e) => {
+                onSubmit={(e) => {
                   e.preventDefault();
-                  const r = await loginAi(passcode);
-                  setMessage(r.ok ? "本人確認しました" : (r.message ?? "確認できませんでした"));
-                  if (r.ok) setPasscode("");
-                  await reload();
+                  guard.run("login", async () => {
+                    const r = await loginAi(passcode);
+                    setMessage(r.ok ? "本人確認しました" : (r.message ?? "確認できませんでした"));
+                    if (r.ok) setPasscode("");
+                    await reload();
+                  });
                 }}
               >
                 <input
@@ -74,11 +78,13 @@ export function AiSettingsSection() {
           {(!status.authRequired || status.authenticated) && !status.misconfigured && (
             <button
               type="button"
-              onClick={async () => {
-                setMessage("確認中…");
-                const r = await checkAiModel();
-                setMessage(r.ok ? `利用できます：${r.displayName ?? r.model}` : (r.message ?? "確認できませんでした"));
-              }}
+              onClick={() =>
+                guard.run("check", async () => {
+                  setMessage("確認中…");
+                  const r = await checkAiModel();
+                  setMessage(r.ok ? `利用できます：${r.displayName ?? r.model}` : (r.message ?? "確認できませんでした"));
+                })
+              }
               className="mt-2 h-11 rounded-xl text-sm text-neutral-700 ring-1 ring-neutral-200 active:bg-neutral-50"
             >
               モデルが使えるか確認する（回数に数えません）

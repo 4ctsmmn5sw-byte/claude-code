@@ -206,7 +206,7 @@ describe("API を通した動作（保存した応答を使い、Gemini は呼�
       decr: async () => {},
     };
   };
-  const cfg = readConfig({ GEMINI_API_KEY: "test-key", APP_PASSCODE: "pass" });
+  const cfg = readConfig({ GEMINI_API_KEY: "test-key", APP_PASSCODE: "pass-phrase-123" });
   const req = (final: boolean) =>
     new Request("http://localhost/api/ai/plan", {
       method: "POST",

@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { fetchAiStatus, loginAi, requestPlan } from "@/lib/ai/client";
-import { capacityMinutes, checkCapacity } from "@/lib/ai/feasibility";
+import { feasibilityStatus, planMetrics, type PlanMetrics } from "@/lib/ai/feasibility";
 import { LIMITS, type AiQuestion, type AiResponse, type AiStatus, type Feasibility, type PlanErrorCode } from "@/lib/ai/planSchema";
+import { useActionGuard } from "@/hooks/useActionGuard";
 import { PRIORITY_LABELS } from "@/lib/goals";
 import { actions, type ApprovedStep, type GoalInput } from "@/lib/store";
 import { formatDuration } from "@/lib/time";
@@ -29,10 +30,10 @@ type Phase =
   | { kind: "saved"; goalId: string; count: number };
 
 const FEASIBILITY_LABEL: Record<Feasibility, { label: string; cls: string }> = {
-  ok: { label: "期限までに完了できる見込み", cls: "bg-emerald-50 text-emerald-800" },
-  tight: { label: "期限までにぎりぎり", cls: "bg-amber-50 text-amber-800" },
-  unlikely: { label: "期限までの完了は難しい見込み", cls: "bg-rose-50 text-rose-800" },
-  unknown: { label: "期限までの見込みは判断できません", cls: "bg-neutral-100 text-neutral-600" },
+  ok: { label: "期限までの時間に収まります", cls: "bg-emerald-50 text-emerald-900" },
+  tight: { label: "期限までに間に合いますが、余裕はあまりありません", cls: "bg-amber-50 text-amber-900" },
+  unlikely: { label: "このままでは期限までに終わりません", cls: "bg-rose-50 text-rose-900" },
+  unknown: { label: "期限までに間に合うかは判断できません", cls: "bg-neutral-100 text-neutral-700" },
 };
 
 /** これ以上試しても解決しないエラー（再試行ボタンを出さない） */
@@ -49,7 +50,7 @@ export function AiPlanSheet({
   /** 新しい目標を作る場合の入力（目標入力画面から） */
   initialGoal: GoalInput;
   /** 既存の目標に工程を足す場合 */
-  existingGoal?: { id: string; stepTitles: string[] };
+  existingGoal?: { id: string; stepTitles: string[]; remainingMinutes: number };
   onClose: () => void;
   onSaved: (goalId: string, stepCount: number) => void;
 }) {
@@ -67,6 +68,8 @@ export function AiPlanSheet({
   const [statusLoaded, setStatusLoaded] = useState(false);
   const [passcode, setPasscode] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
+  // 連打による二重送信（AI の回数の無駄遣い）・二重保存を防ぐ
+  const guard = useActionGuard(800);
 
   useEffect(() => {
     let alive = true;
@@ -94,6 +97,7 @@ export function AiPlanSheet({
       weeklyMinutes,
       answers: allAnswers,
       existingSteps: existingGoal?.stepTitles.slice(0, LIMITS.steps) ?? [],
+      existingRemainingMinutes: existingGoal?.remainingMinutes,
       final,
       today,
     });
@@ -117,8 +121,13 @@ export function AiPlanSheet({
   };
 
   const totalMinutes = draft.reduce((s, d) => s + (Number.isFinite(d.estimatedMinutes) ? d.estimatedMinutes : 0), 0);
-  const capacity = capacityMinutes(today, goal.deadline, weeklyMinutes);
-  const cap = checkCapacity(totalMinutes, capacity);
+  const metrics = planMetrics({
+    today,
+    deadline: goal.deadline,
+    weeklyMinutes,
+    planMinutes: totalMinutes,
+    existingRemainingMinutes: existingGoal?.remainingMinutes,
+  });
 
   const save = () => {
     const bad = draft.find((d) => !d.title.trim() || !Number.isInteger(d.estimatedMinutes) || d.estimatedMinutes < 1);
@@ -148,13 +157,15 @@ export function AiPlanSheet({
         <form
           className="mb-4 rounded-2xl bg-neutral-50 p-3 ring-1 ring-neutral-200/70"
           data-testid="ai-login"
-          onSubmit={async (e) => {
+          onSubmit={(e) => {
             e.preventDefault();
-            const r = await loginAi(passcode);
-            if (!r.ok) return setLoginError(r.message ?? "確認できませんでした");
-            setLoginError(null);
-            setPasscode("");
-            setStatus(await fetchAiStatus());
+            guard.run("login", async () => {
+              const r = await loginAi(passcode);
+              if (!r.ok) return setLoginError(r.message ?? "確認できませんでした");
+              setLoginError(null);
+              setPasscode("");
+              setStatus(await fetchAiStatus());
+            });
           }}
         >
           <label htmlFor="ai-passcode" className="text-xs font-medium text-neutral-500">
@@ -189,7 +200,7 @@ export function AiPlanSheet({
           onSubmit={(e) => {
             e.preventDefault();
             if (!goal.title.trim()) return setError({ code: "invalid_request", message: "目標名を入力してください" });
-            run(false, []);
+            guard.run("ai", () => run(false, []));
           }}
         >
           {existingGoal ? (
@@ -248,7 +259,7 @@ export function AiPlanSheet({
             const qa = phase.questions
               .map((q) => ({ question: q.question.slice(0, LIMITS.question), answer: (answers[q.id] ?? "").trim().slice(0, LIMITS.answer) }))
               .filter((x) => x.answer);
-            run(true, qa);
+            guard.run("ai", () => run(true, qa));
           }}
         >
           <p className="text-sm text-neutral-700">計画を作る前に、AI からの質問です（わからなければ空欄で構いません）。</p>
@@ -293,11 +304,11 @@ export function AiPlanSheet({
           result={result.data}
           draft={draft}
           setDraft={setDraft}
-          totalMinutes={totalMinutes}
-          cap={cap}
+          metrics={metrics}
+          weeklyMinutes={weeklyMinutes}
+          hasExisting={!!existingGoal}
           hasDeadline={!!goal.deadline}
-          hasWeekly={weeklyMinutes !== null}
-          onSave={save}
+          onSave={() => guard.run("save", save)}
           onDiscard={() => {
             if (window.confirm("提案を保存せずに閉じますか？")) onClose();
           }}
@@ -343,24 +354,25 @@ function DraftEditor({
   result,
   draft,
   setDraft,
-  totalMinutes,
-  cap,
+  metrics,
+  weeklyMinutes,
+  hasExisting,
   hasDeadline,
-  hasWeekly,
   onSave,
   onDiscard,
 }: {
   result: AiResponse;
   draft: DraftStep[];
   setDraft: (fn: (d: DraftStep[]) => DraftStep[]) => void;
-  totalMinutes: number;
-  cap: ReturnType<typeof checkCapacity>;
+  metrics: PlanMetrics;
+  weeklyMinutes: number | null;
+  hasExisting: boolean;
   hasDeadline: boolean;
-  hasWeekly: boolean;
   onSave: () => void;
   onDiscard: () => void;
 }) {
-  const f = FEASIBILITY_LABEL[result.plan.feasibility.status];
+  // 編集に合わせて計算し直す（AI の判断ではなく、アプリの計算結果）
+  const f = FEASIBILITY_LABEL[feasibilityStatus(metrics)];
   const update = (key: string, patch: Partial<DraftStep>) => setDraft((d) => d.map((s) => (s.key === key ? { ...s, ...patch } : s)));
   const move = (i: number, dir: -1 | 1) =>
     setDraft((d) => {
@@ -394,35 +406,62 @@ function DraftEditor({
         )}
       </section>
 
-      <section className={`rounded-2xl p-3 text-sm ${f.cls}`} data-testid="ai-feasibility">
-        <p className="font-semibold">AI の見立て：{f.label}</p>
-        {result.plan.feasibility.reason && <p className="mt-1 leading-relaxed">{result.plan.feasibility.reason}</p>}
-      </section>
-
       <section className="rounded-2xl bg-white p-3 text-sm ring-1 ring-neutral-200/80" data-testid="capacity-check">
-        <p className="text-xs font-medium text-neutral-500">アプリによる計算（AI を使わない）</p>
-        <p className="mt-1 tabular-nums text-neutral-800">
-          必要時間の合計（推定）：<b>{formatDuration(totalMinutes)}</b>
+        <p className="text-xs font-medium text-neutral-500">期限までの見通し（アプリが計算・AI は使いません）</p>
+        <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 tabular-nums text-neutral-800">
+          {metrics.days !== null && (
+            <>
+              <dt className="text-neutral-500">期限まで</dt>
+              <dd>
+                {metrics.days}日（約{Math.round((metrics.days / 7) * 10) / 10}週）
+              </dd>
+            </>
+          )}
+          {metrics.capacityMinutes !== null && weeklyMinutes !== null && (
+            <>
+              <dt className="text-neutral-500">使える時間</dt>
+              <dd>
+                <b>{formatDuration(metrics.capacityMinutes)}</b>
+                <span className="text-xs text-neutral-500">（週{formatDuration(weeklyMinutes)} × {metrics.days}日 ÷ 7）</span>
+              </dd>
+            </>
+          )}
+          <dt className="text-neutral-500">今回の工程</dt>
+          <dd>{formatDuration(metrics.planMinutes)}（推定）</dd>
+          {hasExisting && (
+            <>
+              <dt className="text-neutral-500">既存の残り</dt>
+              <dd>{formatDuration(metrics.remainingMinutes - metrics.planMinutes)}</dd>
+            </>
+          )}
+          <dt className="text-neutral-500">残りの作業</dt>
+          <dd>
+            <b>{formatDuration(metrics.remainingMinutes)}</b>
+          </dd>
+          {metrics.requiredWeeklyMinutes !== null && (
+            <>
+              <dt className="text-neutral-500">必要なペース</dt>
+              <dd data-testid="required-weekly">週あたり {formatDuration(metrics.requiredWeeklyMinutes)}</dd>
+            </>
+          )}
+        </dl>
+        <p className={`mt-2 rounded-xl px-2.5 py-1.5 font-semibold ${f.cls}`} data-testid="ai-feasibility">
+          {f.label}
+          {metrics.shortageMinutes > 0 && `（約${formatDuration(metrics.shortageMinutes)}不足。工程を減らすか、期限・使える時間を見直してください）`}
         </p>
-        {cap.capacityMinutes !== null ? (
-          <>
-            <p className="tabular-nums text-neutral-800">期限までに使える時間：{formatDuration(cap.capacityMinutes)}</p>
-            <p className={`mt-1 font-semibold ${cap.status === "short" ? "text-rose-700" : cap.status === "tight" ? "text-amber-700" : "text-emerald-700"}`}>
-              {cap.status === "short"
-                ? `期限までに約${formatDuration(cap.shortageMinutes)}不足します。工程を減らすか、期限・使える時間を見直してください`
-                : cap.status === "tight"
-                  ? "期限までに間に合いますが、余裕はあまりありません"
-                  : "期限までの時間に収まります"}
-            </p>
-          </>
-        ) : (
+        {metrics.capacityMinutes === null && (
           <p className="mt-1 text-xs text-neutral-500">
-            {!hasDeadline ? "期限" : ""}
-            {!hasDeadline && !hasWeekly ? "と" : ""}
-            {!hasWeekly ? "1週間に使える時間" : ""}を入力すると、期限までに間に合うかを計算します。
+            {!hasDeadline ? "期限と1週間に使える時間" : "1週間に使える時間"}を入力すると、期限までに間に合うかを計算します。
           </p>
         )}
       </section>
+
+      {result.plan.feasibility.reason && (
+        <section className="rounded-2xl bg-neutral-50 p-3 text-sm leading-relaxed text-neutral-700" data-testid="ai-comment">
+          <span className="text-xs font-medium text-neutral-500">AI のコメント：</span>
+          {result.plan.feasibility.reason}
+        </section>
+      )}
 
       <p className="text-xs leading-relaxed text-amber-800">⚠︎ 必要時間は AI による推定値です。自分のペースに合わせて調整してください。</p>
 

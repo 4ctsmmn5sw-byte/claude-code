@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useActionGuard } from "@/hooks/useActionGuard";
 import { STEP_STATUS_LABELS, wouldCreateCycle } from "@/lib/goals";
 import { actions } from "@/lib/store";
 import type { GoalStep, StepStatus } from "@/lib/types";
@@ -28,6 +29,7 @@ export function StepForm({
   const [status, setStatus] = useState<StepStatus>(initial?.status ?? "todo");
   const [deps, setDeps] = useState<string[]>(initial?.dependsOn ?? []);
   const [error, setError] = useState<string | null>(null);
+  const guard = useActionGuard(800);
   const selfId = initial?.id ?? "__new__";
   const candidates = siblings.filter((s) => s.id !== selfId);
 
@@ -37,9 +39,12 @@ export function StepForm({
         className="flex flex-col gap-4"
         onSubmit={(e) => {
           e.preventDefault();
-          const r = actions.saveStep({ id: initial?.id, goalId, title, note, estimatedMinutes: minutes, status, dependsOn: deps });
-          if (!r.ok) return setError(r.message);
-          onClose();
+          // 連打で同じ工程が2つ追加されないようにする
+          guard.run("save", () => {
+            const r = actions.saveStep({ id: initial?.id, goalId, title, note, estimatedMinutes: minutes, status, dependsOn: deps });
+            if (!r.ok) return setError(r.message);
+            onClose();
+          });
         }}
       >
         <TextField id="step-title" label="工程名" value={title} onChange={setTitle} placeholder="例：単語帳を1周する" maxLength={80} />

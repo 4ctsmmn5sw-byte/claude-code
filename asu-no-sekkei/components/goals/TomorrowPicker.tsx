@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useActionGuard } from "@/hooks/useActionGuard";
 import { addDays, formatDateLabel } from "@/lib/date";
 import { stepsOf, unfinishedDependencies } from "@/lib/goals";
 import { DEFAULT_SLOT_OPTIONS } from "@/lib/slots";
@@ -33,6 +34,8 @@ export function TomorrowPicker({ goalId, today, onDone }: { goalId: string; toda
   );
   const [results, setResults] = useState<{ title: string; startMin: number | null; minutes: number }[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 連打で同じ工程を二重に追加しないようにする
+  const guard = useActionGuard(1500);
 
   if (!store) return null;
 
@@ -89,17 +92,19 @@ export function TomorrowPicker({ goalId, today, onDone }: { goalId: string; toda
       {error && <p className="text-sm text-rose-600">{error}</p>}
       <button
         type="button"
-        disabled={chosen.length === 0}
-        onClick={() => {
-          const bad = chosen.find((s) => !Number.isInteger(minutes[s.id]) || minutes[s.id] < 5 || minutes[s.id] > 600);
-          if (bad) return setError("1回の作業時間は5〜600分で入力してください");
-          setResults(
-            chosen.map((s) => {
-              const r = actions.addStepToDay(s.id, tomorrow, minutes[s.id]);
-              return { title: s.title, startMin: r.ok ? (r.startMin ?? null) : null, minutes: minutes[s.id] };
-            }),
-          );
-        }}
+        disabled={chosen.length === 0 || guard.isBusy("add")}
+        onClick={() =>
+          guard.run("add", () => {
+            const bad = chosen.find((s) => !Number.isInteger(minutes[s.id]) || minutes[s.id] < 5 || minutes[s.id] > 600);
+            if (bad) return setError("1回の作業時間は5〜600分で入力してください");
+            setResults(
+              chosen.map((s) => {
+                const r = actions.addStepToDay(s.id, tomorrow, minutes[s.id]);
+                return { title: s.title, startMin: r.ok ? (r.startMin ?? null) : null, minutes: minutes[s.id] };
+              }),
+            );
+          })
+        }
         className="h-12 rounded-xl bg-neutral-900 text-base font-semibold text-white disabled:opacity-40"
       >
         明日の時間割に追加（{chosen.length}件）
