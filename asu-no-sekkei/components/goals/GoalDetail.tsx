@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { ToastAction, ToastTone } from "@/hooks/useToast";
+import { requiredWeeklyMinutes } from "@/lib/ai/feasibility";
+import { stepProgress } from "@/lib/sessions";
 import { formatDateLabel } from "@/lib/date";
 import {
   deadlineLabel,
@@ -16,9 +18,13 @@ import {
 } from "@/lib/goals";
 import { actions } from "@/lib/store";
 import { formatDuration, formatMinutes } from "@/lib/time";
-import type { AppData, DateKey, Goal, GoalStep } from "@/lib/types";
+import type { AppData, DateKey, Goal, GoalStep, WorkLog } from "@/lib/types";
+import { Modal } from "../Modal";
+import { AiPlanSheet } from "./AiPlanSheet";
+import { TomorrowPicker } from "./TomorrowPicker";
 import { GoalForm } from "./GoalForm";
 import { StepForm } from "./StepForm";
+import { StepTaskSheet } from "./StepTaskSheet";
 import { WorkLogForm } from "./WorkLogForm";
 
 type Notify = (message: string, tone?: ToastTone, action?: ToastAction) => void;
@@ -46,6 +52,8 @@ export function GoalDetail({
   const [editing, setEditing] = useState(false);
   const [stepForm, setStepForm] = useState<GoalStep | "new" | null>(null);
   const [logging, setLogging] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [tomorrowOpen, setTomorrowOpen] = useState(false);
   const steps = stepsOf(data.goalSteps, goal.id);
   const st = goalStats(goal, data.goalSteps, data.workLogs, today);
   const logs = data.workLogs.filter((l) => l.goalId === goal.id).sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
@@ -53,11 +61,10 @@ export function GoalDetail({
   const dl = deadlineLabel(st.daysLeft);
   const actualRatio = st.estimatedMinutes ? Math.min(1, st.actualMinutes / st.estimatedMinutes) : 0;
 
-  const createTask = (step: GoalStep) => {
-    const r = actions.createTaskFromStep(step.id);
-    if (!r.ok) return notify(r.message, "error");
-    notify(`「${step.title}」を未配置タスクに追加しました`, "info", { label: "計画を開く", run: () => router.push("/") });
-  };
+  // 「タスクにして計画へ」：1 回の作業時間を選ぶ画面を開く
+  const [taskStep, setTaskStep] = useState<GoalStep | null>(null);
+  const [editingLog, setEditingLog] = useState<WorkLog | null>(null);
+  const pace = goal.deadline && st.daysLeft !== null ? requiredWeeklyMinutes(st.remainingStepMinutes, st.daysLeft + 1) : null;
 
   return (
     <>
@@ -134,7 +141,11 @@ export function GoalDetail({
           </div>
         </section>
         {st.remainingStepMinutes > 0 && (
-          <p className="mt-2 text-xs text-neutral-500">残りの工程の必要時間（目安）：{formatDuration(st.remainingStepMinutes)}</p>
+          <p className="mt-2 text-xs text-neutral-500" data-testid="remaining-pace">
+            残りの工程の必要時間（目安）：{formatDuration(st.remainingStepMinutes)}
+            {pace !== null && <>・期限までに終えるには週あたり約{formatDuration(pace)}</>}
+            {goal.deadline && st.daysLeft !== null && st.daysLeft < 0 && <>・期限を過ぎています</>}
+          </p>
         )}
 
         {/* 工程 */}
@@ -158,7 +169,7 @@ export function GoalDetail({
                   data={data}
                   blockers={unfinishedDependencies(data.goalSteps, s)}
                   onOpen={() => setStepForm(s)}
-                  onCreateTask={() => createTask(s)}
+                  onCreateTask={() => setTaskStep(s)}
                 />
               ))}
             </ol>
@@ -170,6 +181,22 @@ export function GoalDetail({
           >
             ＋ 工程を追加
           </button>
+          <button
+            type="button"
+            onClick={() => setAiOpen(true)}
+            className="mt-2 h-12 w-full rounded-2xl bg-violet-50 text-[15px] font-medium text-violet-800 active:bg-violet-100"
+          >
+            ✨ AIに工程を提案してもらう
+          </button>
+          {steps.some((s) => s.status === "todo" || s.status === "doing") && (
+            <button
+              type="button"
+              onClick={() => setTomorrowOpen(true)}
+              className="mt-2 h-12 w-full rounded-2xl bg-white text-[15px] font-medium text-neutral-800 ring-1 ring-neutral-200 active:bg-neutral-50"
+            >
+              📅 明日の時間割に追加
+            </button>
+          )}
         </section>
 
         {/* 実績 */}
@@ -186,7 +213,14 @@ export function GoalDetail({
                   <span className="min-w-0 flex-1 truncate text-sm text-neutral-800">
                     {(l.stepId && stepTitle.get(l.stepId)) || l.note || (l.taskId ? "タスク" : "作業")}
                   </span>
-                  <span className="shrink-0 text-sm tabular-nums text-neutral-700">{formatDuration(l.minutes)}</span>
+                  <button
+                    type="button"
+                    onClick={() => setEditingLog(l)}
+                    className="h-11 shrink-0 rounded-lg px-1 text-sm tabular-nums text-neutral-700 underline decoration-neutral-300 underline-offset-2"
+                    aria-label={`${formatDateLabel(l.date)}の記録（${formatDuration(l.minutes)}）を修正`}
+                  >
+                    {formatDuration(l.minutes)}
+                  </button>
                   <button
                     type="button"
                     onClick={() => actions.deleteWorkLog(l.id)}
@@ -273,7 +307,46 @@ export function GoalDetail({
           }
         />
       )}
+      {tomorrowOpen && (
+        <Modal title="明日の時間割に追加" onClose={() => setTomorrowOpen(false)} testId="tomorrow-sheet">
+          <TomorrowPicker goalId={goal.id} today={today} onDone={() => setTomorrowOpen(false)} />
+        </Modal>
+      )}
+      {aiOpen && (
+        <AiPlanSheet
+          today={today}
+          initialGoal={{
+            title: goal.title,
+            description: goal.description,
+            successCriteria: goal.successCriteria,
+            deadline: goal.deadline,
+            priority: goal.priority,
+            estimatedMinutes: goal.estimatedMinutes,
+            category: goal.category,
+            status: goal.status,
+          }}
+          existingGoal={{ id: goal.id, stepTitles: steps.map((s) => s.title), remainingMinutes: st.remainingStepMinutes }}
+          onClose={() => setAiOpen(false)}
+          onSaved={(_, n) => {
+            setAiOpen(false);
+            notify(`AI の提案から${n}つの工程を追加しました`);
+          }}
+        />
+      )}
       {logging && <WorkLogForm goalId={goal.id} steps={steps} today={today} onClose={() => setLogging(false)} />}
+      {editingLog && <WorkLogForm goalId={goal.id} steps={steps} today={today} initial={editingLog} onClose={() => setEditingLog(null)} />}
+      {taskStep && (
+        <StepTaskSheet
+          data={data}
+          step={data.goalSteps.find((x) => x.id === taskStep.id) ?? taskStep}
+          today={today}
+          onClose={() => setTaskStep(null)}
+          onCreated={(message) => {
+            setTaskStep(null);
+            notify(message, "info", { label: "計画を開く", run: () => router.push("/") });
+          }}
+        />
+      )}
     </>
   );
 }
@@ -298,6 +371,7 @@ function StepRow({
   const linked = tasksOfStep(data.tasks, step.id);
   const done = step.status === "done";
   const placed = linked.filter((t) => t.date && t.startMin !== null && !t.done);
+  const pr = stepProgress(step, data.tasks, data.workLogs);
   return (
     <li data-testid="step-row" data-step-status={step.status} className="rounded-2xl bg-white ring-1 ring-neutral-200/80">
       <div className="flex items-stretch">
@@ -319,6 +393,8 @@ function StepRow({
               {STEP_STATUS_LABELS[step.status]}
             </span>
             {step.estimatedMinutes !== null && <span className="tabular-nums">・{formatDuration(step.estimatedMinutes)}</span>}
+            {step.aiEstimated && step.estimatedMinutes !== null && <span className="rounded bg-amber-50 px-1 text-amber-800">AI推定</span>}
+            {step.priority && <span className={step.priority === "high" ? "text-rose-600" : ""}>・優先度{PRIORITY_LABELS[step.priority]}</span>}
           </span>
           <span className={`mt-0.5 block text-[15px] leading-snug ${done || step.status === "skipped" ? "text-neutral-400 line-through" : "text-neutral-900"}`}>
             {step.title}
@@ -326,6 +402,13 @@ function StepRow({
           {step.note && <span className="mt-0.5 block truncate text-xs text-neutral-500">{step.note}</span>}
           {blockers.length > 0 && !done && (
             <span className="mt-1 block text-xs text-amber-700">前提：{blockers.map((b) => `「${b.title}」`).join("")}が未完了</span>
+          )}
+          {(pr.actualMinutes > 0 || pr.plannedMinutes > 0) && step.estimatedMinutes !== null && (
+            <span className="mt-1 block text-xs tabular-nums text-neutral-600" data-testid="step-progress-line">
+              実績 {formatDuration(pr.actualMinutes)} / {formatDuration(step.estimatedMinutes)}・予定 {formatDuration(pr.plannedMinutes)}
+              {pr.unplannedMinutes !== null && `・未予定 ${formatDuration(pr.unplannedMinutes)}`}
+              {pr.overPlannedMinutes > 0 && <span className="text-amber-700">（予定が残りを{formatDuration(pr.overPlannedMinutes)}超過）</span>}
+            </span>
           )}
           {linked.length > 0 && (
             <span className="mt-1 block text-xs text-violet-700" data-testid="step-tasks">

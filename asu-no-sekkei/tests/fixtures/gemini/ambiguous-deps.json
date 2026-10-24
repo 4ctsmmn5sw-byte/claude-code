@@ -1,0 +1,12 @@
+{
+  "ready": true,
+  "questions": [],
+  "plan": {
+    "summary": "", "approach": "", "feasibility": { "status": "ok", "reason": "" },
+    "steps": [
+      { "key": "step", "title": "A", "detail": "", "estimatedMinutes": 30, "priority": "high", "dependsOn": [] },
+      { "key": "step", "title": "B", "detail": "", "estimatedMinutes": 30, "priority": "high", "dependsOn": [] },
+      { "key": "c", "title": "C", "detail": "", "estimatedMinutes": 30, "priority": "high", "dependsOn": ["step"] }
+    ]
+  }
+}

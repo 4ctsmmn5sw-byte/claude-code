@@ -1,0 +1,12 @@
+{
+  "ready": false,
+  "questions": [
+    { "id": "q1", "question": "質問1", "why": "", "options": ["a", "a", "", "b", "c", "d", "e", "f"] },
+    { "id": "q2", "question": "質問2", "why": "", "options": [] },
+    { "id": "q3", "question": "質問3", "why": "", "options": [] },
+    { "id": "q4", "question": "質問4", "why": "", "options": [] },
+    { "id": "q5", "question": "質問5", "why": "", "options": [] },
+    { "id": "q6", "question": "質問6", "why": "", "options": [] }
+  ],
+  "plan": { "summary": "", "approach": "", "feasibility": { "status": "unknown", "reason": "" }, "steps": [] }
+}

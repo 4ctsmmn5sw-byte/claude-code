@@ -12,6 +12,7 @@ import type { AppData, DateKey, FixedEvent, SnapMinutes, Task, Weekday } from "@
 import { Modal } from "./Modal";
 import { ColorPicker } from "./TaskSheet";
 import { TimeInput } from "./TimeInput";
+import { AiSettingsSection } from "./AiSettingsSection";
 import { BackupSection } from "./BackupSection";
 import { ConflictWarning, DateField, WeekdayPicker } from "./WeeklyFields";
 
@@ -135,6 +136,8 @@ function SettingsContent({ data, editParam }: { data: AppData; editParam: string
             ))}
           </div>
         </section>
+
+        <AiSettingsSection />
 
         <BackupSection data={data} onMessage={setMessage} />
 

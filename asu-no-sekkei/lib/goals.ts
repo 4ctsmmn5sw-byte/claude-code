@@ -58,7 +58,7 @@ export interface GoalStats {
   stepsEstimatedMinutes: number;
   /** 作業時間の実績（WorkLog の合計） */
   actualMinutes: number;
-  /** 終わっていない工程の想定時間の合計（目安） */
+  /** 終わっていない工程の残り必要時間の合計（推定総時間 − 実績） */
   remainingStepMinutes: number;
   /** 次に取り組める工程（前提が済んでいて未完了の最初の工程） */
   nextStep: GoalStep | null;
@@ -76,9 +76,13 @@ export function goalStats(goal: Goal, allSteps: GoalStep[], logs: WorkLog[], tod
   const steps = stepsOf(allSteps, goal.id);
   const active = steps.filter((s) => s.status !== "skipped");
   const stepsEstimatedMinutes = active.reduce((sum, s) => sum + (s.estimatedMinutes ?? 0), 0);
+  // 工程の残り必要時間 = 推定総時間 − その工程の実績（0 未満にしない）
   const remainingStepMinutes = active
     .filter((s) => s.status !== "done")
-    .reduce((sum, s) => sum + (s.estimatedMinutes ?? 0), 0);
+    .reduce((sum, s) => {
+      const actual = logs.filter((l) => l.stepId === s.id).reduce((a, l) => a + l.minutes, 0);
+      return sum + Math.max(0, (s.estimatedMinutes ?? 0) - actual);
+    }, 0);
   const nextStep =
     steps.find((s) => (s.status === "todo" || s.status === "doing") && unfinishedDependencies(allSteps, s).length === 0) ?? null;
   return {

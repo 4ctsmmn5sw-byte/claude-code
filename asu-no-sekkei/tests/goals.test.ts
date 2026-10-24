@@ -222,3 +222,96 @@ describe("バックアップ", () => {
     expect(parseBackupFile(JSON.stringify([1, 2])).ok).toBe(false);
   });
 });
+
+describe("AI の提案の保存・明日の時間割への追加", () => {
+  let repo: MemoryRepository;
+  beforeEach(() => {
+    repo = new MemoryRepository(V2);
+    actions._setRepository(repo);
+  });
+
+  const goalInput = {
+    title: "TOEIC 800点",
+    description: "",
+    successCriteria: "公式テストで800点",
+    deadline: "2026-12-20",
+    priority: "high" as const,
+    estimatedMinutes: null,
+    category: "資格",
+    status: "active" as const,
+  };
+  const approved = (key: string, title: string, minutes: number, dependsOn: string[] = [], aiEstimated = true) => ({
+    key,
+    title,
+    detail: `${title}の詳細`,
+    estimatedMinutes: minutes,
+    priority: "high" as const,
+    dependsOn,
+    aiEstimated,
+  });
+
+  it("承認した工程だけを新しい目標として保存し、既存のタスク・固定予定は変えない", () => {
+    const before = JSON.parse(JSON.stringify(repo.saved));
+    const r = actions.applyAiPlan({
+      goalId: null,
+      goal: goalInput,
+      steps: [approved("a", "単語帳", 300), approved("b", "文法", 600, ["a"], false)],
+    });
+    expect(r.ok).toBe(true);
+    const saved = repo.saved!;
+    expect(saved.goals).toHaveLength(1);
+    expect(saved.goals[0]).toMatchObject({ id: r.goalId, title: "TOEIC 800点", deadline: "2026-12-20" });
+    const steps = saved.goalSteps;
+    expect(steps.map((s) => ({ t: s.title, n: s.note, m: s.estimatedMinutes, p: s.priority, ai: s.aiEstimated, st: s.status }))).toEqual([
+      { t: "単語帳", n: "単語帳の詳細", m: 300, p: "high", ai: true, st: "todo" },
+      { t: "文法", n: "文法の詳細", m: 600, p: "high", ai: false, st: "todo" },
+    ]);
+    expect(steps[1].dependsOn).toEqual([steps[0].id]);
+    expect(saved.tasks.map((t) => ({ id: t.id, title: t.title, date: t.date, startMin: t.startMin, done: t.done }))).toEqual(
+      before.tasks.map((t: Record<string, unknown>) => ({ id: t.id, title: t.title, date: t.date, startMin: t.startMin, done: t.done })),
+    );
+    expect(saved.fixedEvents.map((e) => e.id)).toEqual(["f1"]);
+    expect(saved.fixedEvents[0].skipDates).toEqual(["2026-10-21"]);
+  });
+
+  it("既存の目標に追加すると、既存の工程の後ろに並ぶ", () => {
+    const g = actions.applyAiPlan({ goalId: null, goal: goalInput, steps: [approved("a", "既存1", 30)] }).goalId!;
+    actions.saveStep({ goalId: g, title: "手で追加", note: "", estimatedMinutes: 10, status: "done", dependsOn: [] });
+    expect(actions.applyAiPlan({ goalId: g, goal: null, steps: [approved("x", "追加1", 60)] }).ok).toBe(true);
+    const steps = repo.saved!.goalSteps.filter((s) => s.goalId === g).sort((a, b) => a.order - b.order);
+    expect(steps.map((s) => s.title)).toEqual(["既存1", "手で追加", "追加1"]);
+    expect(steps[1].status).toBe("done");
+    expect(repo.saved!.goals).toHaveLength(1);
+  });
+
+  it("不正な提案は何も保存しない（循環・空の名前・存在しない目標）", () => {
+    const before = JSON.stringify(repo.saved);
+    expect(actions.applyAiPlan({ goalId: null, goal: goalInput, steps: [approved("a", "A", 30, ["b"]), approved("b", "B", 30, ["a"])] }).ok).toBe(false);
+    expect(actions.applyAiPlan({ goalId: null, goal: goalInput, steps: [approved("a", " ", 30)] }).ok).toBe(false);
+    expect(actions.applyAiPlan({ goalId: "nope", goal: null, steps: [approved("a", "A", 30)] }).ok).toBe(false);
+    expect(actions.applyAiPlan({ goalId: null, goal: goalInput, steps: [] }).ok).toBe(false);
+    expect(JSON.stringify(repo.saved)).toBe(before);
+  });
+
+  it("工程を明日の空き時間に追加する（固定予定・配置済みタスクを避け、空きがなければ未配置）", () => {
+    // 10/15（木）は固定予定なし（大学は月・水）、配置済み：レポート 13:00-14:00
+    const g = actions.applyAiPlan({ goalId: null, goal: goalInput, steps: [approved("a", "単語帳", 300), approved("b", "文法", 600)] }).goalId!;
+    const [s1, s2] = repo.saved!.goalSteps.filter((s) => s.goalId === g);
+    const r1 = actions.addStepToDay(s1.id, "2026-10-15", 60, { from: 720, to: 900, step: 5 });
+    expect(r1).toMatchObject({ ok: true, startMin: 720 }); // 12:00-13:00
+    const r2 = actions.addStepToDay(s2.id, "2026-10-15", 60, { from: 720, to: 900, step: 5 });
+    expect(r2).toMatchObject({ ok: true, startMin: 840 }); // レポート（13:00-14:00）の後
+    const r3 = actions.addStepToDay(s1.id, "2026-10-15", 60, { from: 720, to: 900, step: 5 });
+    expect(r3).toMatchObject({ ok: true, startMin: null }); // 空きなし → 未配置
+    const tasks = repo.saved!.tasks;
+    expect(tasks.find((t) => t.id === r1.taskId)).toMatchObject({ date: "2026-10-15", startMin: 720, durationMin: 60, goalId: g, stepId: s1.id });
+    expect(tasks.find((t) => t.id === r3.taskId)).toMatchObject({ date: null, startMin: null });
+    expect(tasks.find((t) => t.id === "t1")).toMatchObject({ date: "2026-10-15", startMin: 780 });
+  });
+
+  it("固定予定の時間は避ける（水曜の大学 9:00-12:00）", () => {
+    const g = actions.applyAiPlan({ goalId: null, goal: goalInput, steps: [approved("a", "単語帳", 300)] }).goalId!;
+    const s = repo.saved!.goalSteps.find((x) => x.goalId === g)!;
+    expect(actions.addStepToDay(s.id, "2026-10-14", 60, { from: 540, to: 900, step: 5 })).toMatchObject({ startMin: 720 });
+  });
+});

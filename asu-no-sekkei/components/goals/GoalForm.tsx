@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useActionGuard } from "@/hooks/useActionGuard";
 import { GOAL_STATUS_LABELS, PRIORITY_LABELS } from "@/lib/goals";
 import { actions, type GoalInput } from "@/lib/store";
 import type { Goal, GoalPriority, GoalStatus } from "@/lib/types";
@@ -17,6 +18,7 @@ export function GoalForm({
   categories,
   onClose,
   onSaved,
+  onAiPlan,
 }: {
   initial: Goal | null;
   defaultStatus: GoalStatus;
@@ -24,6 +26,8 @@ export function GoalForm({
   categories: string[];
   onClose: () => void;
   onSaved: (id: string) => void;
+  /** 「AIに計画を作ってもらう」（新しい目標のときだけ） */
+  onAiPlan?: (input: GoalInput) => void;
 }) {
   const [v, setV] = useState<GoalInput>(() => ({
     title: initial?.title ?? "",
@@ -36,6 +40,7 @@ export function GoalForm({
     status: initial?.status ?? defaultStatus,
   }));
   const [error, setError] = useState<string | null>(null);
+  const guard = useActionGuard(800);
   const set = <K extends keyof GoalInput>(k: K, val: GoalInput[K]) => setV((cur) => ({ ...cur, [k]: val }));
   const suggestions = [...new Set([...categories, ...CATEGORY_SUGGESTIONS])].filter(Boolean).slice(0, 8);
 
@@ -45,9 +50,12 @@ export function GoalForm({
         className="flex flex-col gap-4"
         onSubmit={(e) => {
           e.preventDefault();
-          const r = actions.saveGoal({ ...v, id: initial?.id });
-          if (!r.ok) return setError(r.message);
-          onSaved(r.id!);
+          // 連打で同じ目標が2つ作られないようにする
+          guard.run("save", () => {
+            const r = actions.saveGoal({ ...v, id: initial?.id });
+            if (!r.ok) return setError(r.message);
+            onSaved(r.id!);
+          });
         }}
       >
         <TextField id="goal-title" label="目標名" value={v.title} onChange={(x) => set("title", x)} placeholder="例：TOEIC 800点を取る" maxLength={80} />
@@ -91,8 +99,20 @@ export function GoalForm({
         </div>
 
         {error && <p className="text-sm text-rose-600">{error}</p>}
+        {!initial && onAiPlan && (
+          <button
+            type="button"
+            onClick={() => {
+              if (!v.title.trim()) return setError("目標名を入力してください");
+              onAiPlan(v);
+            }}
+            className="h-12 rounded-xl bg-violet-600 text-base font-semibold text-white active:bg-violet-700"
+          >
+            ✨ AIに計画を作ってもらう
+          </button>
+        )}
         <button type="submit" className="h-12 rounded-xl bg-neutral-900 text-base font-semibold text-white active:bg-neutral-700">
-          {initial ? "保存" : "目標を追加"}
+          {initial ? "保存" : onAiPlan ? "工程は自分で作る（目標だけ追加）" : "目標を追加"}
         </button>
       </form>
     </Modal>

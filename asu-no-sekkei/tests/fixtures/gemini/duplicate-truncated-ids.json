@@ -1,0 +1,9 @@
+{
+  "ready": false,
+  "questions": [
+    { "id": "question_about_current_level_1", "question": "今の進み具合は？", "why": "", "options": [] },
+    { "id": "question_about_current_level_2", "question": "使える時間は？", "why": "", "options": [] },
+    { "id": "question_about_current_level_2", "question": "期限は？", "why": "", "options": [] }
+  ],
+  "plan": { "summary": "", "approach": "", "feasibility": { "status": "unknown", "reason": "" }, "steps": [] }
+}
