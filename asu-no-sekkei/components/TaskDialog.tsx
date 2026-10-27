@@ -31,6 +31,7 @@ export function TaskDialog({
   onClose,
   notify,
   link,
+  onCompleted,
 }: {
   task: Task;
   viewDate: DateKey;
@@ -40,6 +41,8 @@ export function TaskDialog({
   notify: (message: string, tone?: "info" | "error", action?: ToastAction) => void;
   /** 目標の工程から作ったタスクの場合の目標名・工程名 */
   link?: { goalId: string; goal: string; step: string | null };
+  /** 目標のタスクを完了したとき（実績時間の確認を開く） */
+  onCompleted?: (taskId: string) => void;
 }) {
   const placed = task.date !== null && task.startMin !== null;
   const targetDate = task.date ?? viewDate;
@@ -277,7 +280,7 @@ export function TaskDialog({
             <button
               type="button"
               onClick={() => {
-                toggleDoneWithPrompt(task.id, notify);
+                toggleDoneWithPrompt(task.id, notify, onCompleted);
                 onClose();
               }}
               className="h-11 flex-1 rounded-xl px-3 text-sm text-neutral-700 ring-1 ring-neutral-200 active:bg-neutral-50"

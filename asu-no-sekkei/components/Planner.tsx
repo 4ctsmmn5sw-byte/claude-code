@@ -25,6 +25,7 @@ import { toggleDoneWithPrompt } from "./taskDone";
 import { FixedEventSheet } from "./FixedEventSheet";
 import { Header } from "./Header";
 import { TaskDialog } from "./TaskDialog";
+import { CompletionSheet } from "./goals/CompletionSheet";
 import { DragChip, PEEK_HEIGHT, TaskSheet, type SheetMode } from "./TaskSheet";
 import { Timeline, type DragPreview } from "./Timeline";
 import type { DragData } from "./TimelineTaskBlock";
@@ -115,6 +116,8 @@ function PlannerView({ data, warning, today, mode }: { data: AppData; warning: s
   const [dragSession, setDragSession] = useState<DragSession | null>(null);
   const [mainHeight, setMainHeight] = useState(600);
   const { toast, show, hide } = useToast();
+  // 目標のタスクを完了したときの「実績時間の確認」
+  const [completingId, setCompletingId] = useState<string | null>(null);
   const nowMin = useTokyoNowMinutes();
 
   const mainRef = useRef<HTMLDivElement>(null);
@@ -355,7 +358,7 @@ function PlannerView({ data, warning, today, mode }: { data: AppData; warning: s
       <BarButton label="編集" onClick={() => setEditingId(selected.id)} icon="M4 14.5V16h1.5l8-8L12 6.5l-8 8ZM13.5 5 15 6.5" />
       <BarButton
         label={selected.done ? "未完了" : "完了"}
-        onClick={() => toggleDoneWithPrompt(selected.id, show)}
+        onClick={() => toggleDoneWithPrompt(selected.id, show, setCompletingId)}
         icon="m4.5 10.5 3.5 3.5 7.5-8"
       />
       <BarButton
@@ -545,7 +548,7 @@ function PlannerView({ data, warning, today, mode }: { data: AppData; warning: s
               setSheetMode("peek");
             }}
             onEditTask={setEditingId}
-            onToggleDone={(id) => toggleDoneWithPrompt(id, show)}
+            onToggleDone={(id) => toggleDoneWithPrompt(id, show, setCompletingId)}
           />
         </div>
 
@@ -573,6 +576,7 @@ function PlannerView({ data, warning, today, mode }: { data: AppData; warning: s
           fixedEvents={fixedEvents}
           onClose={() => setEditingId(null)}
           notify={show}
+          onCompleted={setCompletingId}
           link={
             editing.goalId && goalTitles.has(editing.goalId)
               ? {
@@ -582,6 +586,16 @@ function PlannerView({ data, warning, today, mode }: { data: AppData; warning: s
                 }
               : undefined
           }
+        />
+      )}
+      {completingId && (
+        <CompletionSheet
+          taskId={completingId}
+          onClose={() => setCompletingId(null)}
+          onSaved={(message) => {
+            setCompletingId(null);
+            show(message);
+          }}
         />
       )}
       {adding && (

@@ -403,11 +403,20 @@ function StepRow({
           {blockers.length > 0 && !done && (
             <span className="mt-1 block text-xs text-amber-700">前提：{blockers.map((b) => `「${b.title}」`).join("")}が未完了</span>
           )}
-          {(pr.actualMinutes > 0 || pr.plannedMinutes > 0) && step.estimatedMinutes !== null && (
+          {step.estimatedMinutes !== null && step.status !== "skipped" && (
             <span className="mt-1 block text-xs tabular-nums text-neutral-600" data-testid="step-progress-line">
-              実績 {formatDuration(pr.actualMinutes)} / {formatDuration(step.estimatedMinutes)}・予定 {formatDuration(pr.plannedMinutes)}
-              {pr.unplannedMinutes !== null && `・未予定 ${formatDuration(pr.unplannedMinutes)}`}
-              {pr.overPlannedMinutes > 0 && <span className="text-amber-700">（予定が残りを{formatDuration(pr.overPlannedMinutes)}超過）</span>}
+              <span data-testid="step-actual">実績 {formatDuration(pr.actualMinutes)} / {formatDuration(step.estimatedMinutes)}</span>
+              {!done && (
+                <>
+                  ・<span data-testid="step-remaining">残り {formatDuration(pr.remainingMinutes ?? 0)}</span>
+                  <span className="block">
+                    予定済み {formatDuration(pr.plannedMinutes)}
+                    {pr.plannedMinutes > 0 && pr.placedMinutes < pr.plannedMinutes && `（うち未配置 ${formatDuration(pr.plannedMinutes - pr.placedMinutes)}）`}
+                    ・<span data-testid="step-unplanned">未予定 {formatDuration(pr.unplannedMinutes ?? 0)}</span>
+                    {pr.overPlannedMinutes > 0 && <span className="text-amber-700">（予定が残りを{formatDuration(pr.overPlannedMinutes)}超過）</span>}
+                  </span>
+                </>
+              )}
             </span>
           )}
           {linked.length > 0 && (

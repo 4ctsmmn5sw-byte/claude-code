@@ -143,6 +143,26 @@ describe("工程の進捗（予定と実績を分ける）", () => {
     expect(prog()).toMatchObject({ actualMinutes: 90, remainingMinutes: 210 });
   });
 
+  it("完了時の実績確定：実績だけを更新し、予定時間は変えない。工程の完了は選んだときだけ", () => {
+    stepId = actions.saveStep({ id: stepId, goalId, title: "文法問題集", note: "", estimatedMinutes: 540, status: "doing", dependsOn: [] }).id!;
+    const [id] = actions.createStepTasks(stepId, [{ durationMin: 60, date: "2026-10-17", startMin: 600 }]).taskIds!;
+    expect(prog()).toMatchObject({ actualMinutes: 0, remainingMinutes: 540, plannedMinutes: 60, placedMinutes: 60, unplannedMinutes: 480 });
+    const r = actions.toggleDone(id);
+    expect(r.logId).toBe(repo.saved!.workLogs[0].id);
+    expect(prog()).toMatchObject({ actualMinutes: 60, remainingMinutes: 480, plannedMinutes: 0, unplannedMinutes: 480 });
+    expect(actions.recordTaskActual(id, 75).ok).toBe(true);
+    expect(prog()).toMatchObject({ actualMinutes: 75, remainingMinutes: 465 });
+    expect(repo.saved!.tasks.find((t) => t.id === id)!.durationMin).toBe(60);
+    expect(repo.saved!.workLogs).toHaveLength(1);
+    expect(step().status).toBe("doing");
+    expect(actions.recordTaskActual(id, 75, { completeStep: true }).ok).toBe(true);
+    expect(step().status).toBe("done");
+    // 未完了のタスクには記録できない
+    actions.toggleDone(id);
+    expect(actions.recordTaskActual(id, 30).ok).toBe(false);
+    expect(repo.saved!.workLogs).toHaveLength(0);
+  });
+
   it("予定が残り必要時間を超えた分を出す（追加練習として作ることはできる）", () => {
     actions.createStepTasks(stepId, Array.from({ length: 6 }, () => ({ durationMin: 60, date: null, startMin: null })));
     expect(prog()).toMatchObject({ plannedMinutes: 360, unplannedMinutes: 0, overPlannedMinutes: 60 });

@@ -98,8 +98,13 @@ test("既存データを保ったまま、目標→工程→タスク→計画�
 
   // 完了 → 実績を記録し、工程も完了にするか尋ねる
   await page.getByTestId("selected-bar").getByRole("button", { name: "完了" }).tap();
-  await expect(page.getByTestId("toast")).toContainText("作業時間を記録しました");
-  await page.getByTestId("toast").getByRole("button", { name: "完了にする" }).tap();
+  // 実績時間の確認：必要時間（45分）に達したので「工程も完了にする」が最初から選ばれている
+  const done = page.getByTestId("completion-sheet");
+  await page.waitForTimeout(350);
+  await expect(done.getByLabel("実際に取り組んだ時間")).toHaveValue("45");
+  await expect(done.getByLabel(/工程も完了にする/)).toBeChecked();
+  await done.getByRole("button", { name: "記録する" }).tap();
+  await expect(page.getByTestId("toast")).toContainText("工程「単語帳 Unit1」を完了にしました");
 
   // 編集画面に目標・工程との対応を表示
   await page.getByTestId("selected-bar").getByRole("button", { name: "編集" }).tap();
@@ -267,7 +272,8 @@ test("5時間の工程を60分×5回に分けて複数日に配置し、完了�
   expect(mine.every((t: { durationMin: number; stepId: string; goalId: string }) => t.durationMin === 60 && t.stepId === data.goalSteps[0].id && t.goalId === data.goals[0].id)).toBe(true);
   expect(new Set(mine.map((t: { date: string }) => t.date)).size).toBe(5);
   expect(data.goalSteps[0]).toMatchObject({ estimatedMinutes: 300, sessionMinutes: 60 });
-  await expect(row.getByTestId("step-progress-line")).toContainText("実績 0分 / 5時間・予定 5時間・未予定 0分");
+  await expect(row.getByTestId("step-progress-line")).toContainText("実績 0分 / 5時間・残り 5時間");
+  await expect(row.getByTestId("step-progress-line")).toContainText("予定済み 5時間・未予定 0分");
 
   // 残りをすべて予定済み → さらに作ろうとすると警告。「追加練習」を選んだときだけ作れる
   await row.getByRole("button", { name: "文法問題集をタスクにする" }).tap();
@@ -277,7 +283,7 @@ test("5時間の工程を60分×5回に分けて複数日に配置し、完了�
   await expect(createBtn).toBeDisabled();
   await sheet.getByLabel("追加練習として予定する").check();
   await createBtn.tap();
-  await expect(row.getByTestId("step-progress-line")).toContainText("予定 6時間");
+  await expect(row.getByTestId("step-progress-line")).toContainText("予定済み 6時間（うち未配置 1時間）");
   await expect(row.getByTestId("step-progress-line")).toContainText("予定が残りを1時間超過");
 
   // 計画画面で 10/15 の 1 回分を完了 → 実績 1時間、工程は完了にならない
@@ -285,7 +291,13 @@ test("5時間の工程を60分×5回に分けて複数日に配置し、完了�
   await expect(block(page, "文法問題集")).toHaveAttribute("data-start", "480");
   await block(page, "文法問題集").tap();
   await page.getByTestId("selected-bar").getByRole("button", { name: "完了" }).tap();
-  await expect(page.getByTestId("toast")).toContainText("実績 1時間 / 5時間（残り 4時間）");
+  const done = page.getByTestId("completion-sheet");
+  await page.waitForTimeout(350);
+  await expect(done.getByTestId("completion-progress")).toContainText("実績1時間 / 5時間");
+  await expect(done.getByTestId("completion-progress")).toContainText("残り必要時間4時間");
+  await expect(done.getByLabel(/工程も完了にする/)).not.toBeChecked();
+  await done.getByRole("button", { name: "記録する" }).tap();
+  await expect(page.getByTestId("toast")).toContainText("実績を1時間で記録しました");
 
   // 実際の時間に修正（記録は1件のまま）
   await page.goto("/goals");
@@ -342,4 +354,75 @@ test("1回分を選んだ日の空き時間に配置する（30分・自由入�
     [50, null, null],
   ]);
   expect(data.goalSteps[0]).toMatchObject({ estimatedMinutes: 240, sessionMinutes: 50 });
+});
+
+test("工程（540分）→ 60分のタスク → 配置 → 完了 → 実績の確認・修正 → 残り時間 → 取り消し → 再読み込み", async ({ page }) => {
+  await freshStart(page, V2);
+  await page.goto("/goals");
+  await addGoal(page, { title: "簿記2級" });
+  await addStep(page, "過去問演習", "9", "0");
+  const row = page.getByTestId("step-row").first();
+  const line = row.getByTestId("step-progress-line");
+  // タスクを作る前から、実績・残り・未予定を表示する
+  await expect(line).toContainText("実績 0分 / 9時間・残り 9時間");
+  await expect(line).toContainText("予定済み 0分・未予定 9時間");
+
+  // 60分のタスクを未配置で作る → 予定済み 1時間（うち未配置）・未予定 8時間（残りは 9時間のまま）
+  await row.getByRole("button", { name: "過去問演習をタスクにする" }).tap();
+  await page.waitForTimeout(350);
+  await page.getByTestId("step-task-sheet").getByRole("button", { name: "タスクを作成（1時間）" }).tap();
+  await expect(line).toContainText("残り 9時間");
+  await expect(line).toContainText("予定済み 1時間（うち未配置 1時間）・未予定 8時間");
+  let data = await stored(page);
+  const task = data.tasks.find((t: { title: string }) => t.title === "過去問演習");
+  expect(task).toMatchObject({ durationMin: 60, goalId: data.goals[0].id, stepId: data.goalSteps[0].id, date: null });
+
+  // 計画画面で 15:00 に配置 → 完了
+  await page.goto("/");
+  await page.getByRole("button", { name: /^タスク一覧/ }).tap();
+  await page.waitForTimeout(350);
+  await page.getByRole("button", { name: /過去問演習.*タップで配置先/ }).tap();
+  await scrollTimelineTo(page, 15 * 60);
+  await page.touchscreen.tap(250, (await yOf(page, 15 * 60)) + 1);
+  await expect(block(page, "過去問演習")).toHaveAttribute("data-start", "900");
+  await page.getByTestId("selected-bar").getByRole("button", { name: "完了" }).tap();
+
+  // 実績時間の確認（予定 60分 → 実際 50分に修正）
+  const done = page.getByTestId("completion-sheet");
+  await page.waitForTimeout(350);
+  await expect(done.getByLabel("実際に取り組んだ時間")).toHaveValue("60");
+  await expect(done.getByTestId("completion-progress")).toContainText("残り必要時間8時間");
+  await done.getByLabel("実際に取り組んだ時間").fill("50");
+  await expect(done.getByTestId("completion-progress")).toContainText("残り必要時間8時間10分");
+  await done.getByRole("button", { name: "記録する" }).tap();
+  data = await stored(page);
+  expect(data.workLogs).toEqual([expect.objectContaining({ taskId: task.id, stepId: task.stepId, minutes: 50 })]);
+  expect(data.tasks.find((t: { id: string }) => t.id === task.id)).toMatchObject({ done: true, durationMin: 60 }); // 予定時間は変えない
+
+  // 目標画面：実績 50分・残り 8時間10分・予定済み 0分（完了したタスクは予定に数えない）
+  await page.goto("/goals");
+  await page.getByTestId("goal-card").filter({ hasText: "簿記2級" }).tap();
+  await expect(line).toContainText("実績 50分 / 9時間・残り 8時間10分");
+  await expect(line).toContainText("予定済み 0分・未予定 8時間10分");
+  await expect(row).toHaveAttribute("data-step-status", "doing");
+
+  // 完了を取り消す → 実績は消え、予定済みに戻る。もう一度完了しても記録は 1 件
+  await page.goto("/");
+  await block(page, "過去問演習").tap();
+  await page.getByTestId("selected-bar").getByRole("button", { name: "未完了" }).tap();
+  expect((await stored(page)).workLogs).toHaveLength(0);
+  await page.getByTestId("selected-bar").getByRole("button", { name: "完了" }).tap();
+  await page.waitForTimeout(350);
+  await page.getByTestId("completion-sheet").getByRole("button", { name: "記録する" }).tap();
+  expect((await stored(page)).workLogs).toHaveLength(1);
+
+  // 再読み込み後も同じ集計
+  await page.goto("/goals");
+  await page.reload();
+  await page.getByTestId("goal-card").filter({ hasText: "簿記2級" }).tap();
+  await expect(line).toContainText("実績 1時間 / 9時間・残り 8時間");
+  await expect(line).toContainText("予定済み 0分・未予定 8時間");
+  data = await stored(page);
+  expect(data.goalSteps[0].estimatedMinutes).toBe(540);
+  expect(data.tasks.find((t: { id: string }) => t.id === "t1")).toMatchObject({ title: "レポート", startMin: 780 });
 });

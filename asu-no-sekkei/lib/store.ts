@@ -277,18 +277,14 @@ export const actions = {
   },
 
   /**
-   * 完了状態を切り替える。目標に紐づくタスクを完了にしたときは作業時間の実績（WorkLog）を記録し、
-   * 未完了に戻したときはそのタスクから記録した実績を取り消す。工程の状態は自動では変えない。
-   */
-  /**
    * 完了の切り替え。目標のタスクを完了にすると、その予定時間を実績として 1 件だけ記録する
    * （taskId で結ぶので、完了・未完了を繰り返しても二重に記録しない。未完了に戻すと消える）。
    * 工程は自動では完了にしない。
    */
-  toggleDone(id: string): { done: boolean; step: GoalStep | null; progress: StepProgress | null } {
+  toggleDone(id: string): { done: boolean; step: GoalStep | null; progress: StepProgress | null; logId: string | null } {
     const d = data();
     const task = d.tasks.find((t) => t.id === id);
-    if (!task) return { done: false, step: null, progress: null };
+    if (!task) return { done: false, step: null, progress: null, logId: null };
     const done = !task.done;
     const now = nowIso();
     const tasks = d.tasks.map((t) => (t.id === id ? { ...t, done, updatedAt: now } : t));
@@ -311,7 +307,8 @@ export const actions = {
     }
     commit({ ...d, tasks, workLogs });
     const step = task.stepId ? (d.goalSteps.find((s) => s.id === task.stepId) ?? null) : null;
-    return { done, step, progress: step ? stepProgress(step, tasks, workLogs) : null };
+    const logId = done ? (workLogs.find((l) => l.taskId === id)?.id ?? null) : null;
+    return { done, step, progress: step ? stepProgress(step, tasks, workLogs) : null, logId };
   },
 
   deleteTask(id: string) {
@@ -715,6 +712,30 @@ export const actions = {
   },
 
   /* ---------- 実績 ---------- */
+
+  /**
+   * 完了したタスクの実績時間を確定する（完了時の確認画面から）。
+   * タスクの予定時間（durationMin）は変えず、そのタスクの実績（taskId で 1 件）だけを更新する。
+   * completeStep が true なら工程も完了にする（同じ保存処理の中で行う）。
+   */
+  recordTaskActual(taskId: string, minutes: number, opts: { completeStep?: boolean } = {}): ActionResult {
+    const d = data();
+    const task = d.tasks.find((t) => t.id === taskId);
+    if (!task || !task.done) return { ok: false, message: "完了したタスクが見つかりません" };
+    const log = d.workLogs.find((l) => l.taskId === taskId);
+    if (!log) return { ok: false, message: "このタスクの作業記録がありません" };
+    if (!validDuration(minutes)) return { ok: false, message: "作業時間は1〜1440分で入力してください" };
+    const now = nowIso();
+    commit({
+      ...d,
+      workLogs: d.workLogs.map((l) => (l.id === log.id ? { ...l, minutes } : l)),
+      goalSteps:
+        opts.completeStep && task.stepId
+          ? d.goalSteps.map((s) => (s.id === task.stepId ? { ...s, status: "done", updatedAt: now } : s))
+          : d.goalSteps,
+    });
+    return { ok: true };
+  },
 
   /** 実績の修正（実際に取り組んだ時間など）。タスクから記録した実績も修正できる（件数は増えない） */
   updateWorkLog(id: string, patch: { minutes: number; date: DateKey; note: string }): ActionResult {
